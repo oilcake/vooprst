@@ -1,0 +1,8 @@
+[package]
+name = "simple_video_player"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ffmpeg-next = "6"
+sdl2 = "0.36"
