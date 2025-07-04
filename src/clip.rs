@@ -25,7 +25,6 @@ pub struct Clip {
 
 impl Clip {
     pub fn new(path: &str) -> Result<Clip, ffmpeg::Error> {
-        ffmpeg::init()?;
         let ctx = ffmpeg::format::input(&path)?;
         let input = ctx.streams().best(ffmpeg::media::Type::Video).unwrap();
         let video_stream_index = input.index();
