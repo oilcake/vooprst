@@ -40,7 +40,7 @@ impl Clip {
             decoder.format(),
             width,
             height,
-            ffmpeg::format::Pixel::YUV420P,
+            ffmpeg::format::Pixel::RGBA,
             width,
             height,
             ffmpeg::software::scaling::Flags::BILINEAR,

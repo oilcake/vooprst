@@ -2,8 +2,10 @@
 name = "voop"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.84"
+resolver = "2"
 
 [dependencies]
 ffmpeg-next = "6"
-sdl2 = "0.36"
 rusty_link = "0.4.5"
+env_logger = "0.11"
