@@ -1,5 +1,5 @@
-use crate::state::State;
 use crate::clip::Clip;
+use crate::state::State;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
@@ -14,6 +14,7 @@ pub async fn run(mut link: crate::Link, mut clip: Clip) {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let mut state = State::new(&window).await;
     let mut surface_configured = false;
+    let mut texture_initialized = false;
 
     // Frame rate limiting
     const TARGET_FPS: u32 = 60;
@@ -59,8 +60,19 @@ pub async fn run(mut link: crate::Link, mut clip: Clip) {
 
                             if elapsed >= frame_duration {
                                 link.update_phase_and_beat();
-                                // TODO: Somehow pass it to texture
+                                // Get frame from clip and pass it to state
                                 let frame = clip.play_video_at_position(link.phase as f32).unwrap();
+
+                                // Initialize texture with video dimensions on first frame
+                                if !texture_initialized {
+                                    state.recreate_texture(
+                                        frame.width() as u32,
+                                        frame.height() as u32,
+                                    );
+                                    texture_initialized = true;
+                                }
+
+                                state.update_texture_with_frame(&frame);
 
                                 state.update();
                                 match state.render() {

@@ -1,4 +1,5 @@
-use crate::vertex::{INDICES, VERTICES, Vertex};
+use crate::vertex::{Vertex, INDICES, VERTICES};
+use ffmpeg_next as ffmpeg;
 use wgpu::util::DeviceExt;
 use winit::{event::WindowEvent, window::Window};
 
@@ -14,6 +15,9 @@ pub struct State<'a> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    diffuse_texture: wgpu::Texture,
+    texture_width: u32,
+    texture_height: u32,
 }
 
 impl<'a> State<'a> {
@@ -78,40 +82,26 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        let diffuse_bytes = include_bytes!("../happy-tree.png");
-        let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
-        let diffuse_rgba = diffuse_image.to_rgba8();
-
-        use image::GenericImageView;
-        let dimensions = diffuse_image.dimensions();
+        // Create a placeholder texture that will be updated with video frames
+        // We'll start with a 1x1 texture and resize it when we get the first frame
         let texture_size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
-            // All textures are stored as 3D, we represent our 2D texture
-            // by setting depth to 1.
+            width: 1,
+            height: 1,
             depth_or_array_layers: 1,
         };
         let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_size,
-            mip_level_count: 1, // We'll talk about this a little later
+            mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            // Most images are stored using sRGB, so we need to reflect that here.
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            // TEXTURE_BINDING tells wgpu that we want to use this texture in shaders
-            // COPY_DST means that we want to copy data to this texture
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("diffuse_texture"),
-            // This is the same as with the SurfaceConfig. It
-            // specifies what texture formats can be used to
-            // create TextureViews for this texture. The base
-            // texture format (Rgba8UnormSrgb in this case) is
-            // always supported. Note that using a different
-            // texture format is not supported on the WebGL2
-            // backend.
             view_formats: &[],
         });
-        // --- upload pixels ---
+
+        // Initialize with a single black pixel
+        let black_pixel = [0u8, 0u8, 0u8, 255u8];
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &diffuse_texture,
@@ -119,11 +109,11 @@ impl<'a> State<'a> {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &diffuse_rgba,
+            &black_pixel,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
             },
             texture_size,
         );
@@ -239,11 +229,85 @@ impl<'a> State<'a> {
             vertex_buffer,
             index_buffer,
             num_indices: INDICES.len() as u32,
+            diffuse_texture,
+            texture_width: 1,
+            texture_height: 1,
         }
     }
 
     pub fn window(&self) -> &Window {
         &self.window
+    }
+
+    pub fn recreate_texture(&mut self, width: u32, height: u32) {
+        let texture_size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        self.diffuse_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("diffuse_texture"),
+            view_formats: &[],
+        });
+
+        // Recreate the texture view and bind group
+        let diffuse_view = self.diffuse_texture.create_view(&Default::default());
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let tex_layout = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &tex_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_view),
+                },
+            ],
+            label: Some("texture_bind_group"),
+        });
+
+        self.texture_width = width;
+        self.texture_height = height;
     }
 
     // impl State
@@ -263,6 +327,72 @@ impl<'a> State<'a> {
 
     pub fn update(&mut self) {
         // todo!()
+    }
+
+    pub fn update_texture_with_frame(&mut self, frame: &ffmpeg::util::frame::Video) {
+        let width = frame.width() as u32;
+        let height = frame.height() as u32;
+        let data = frame.data(0);
+        let stride = frame.stride(0) as u32;
+
+        // Check if we need to recreate the texture with new dimensions
+        if self.texture_width != width || self.texture_height != height {
+            self.recreate_texture(width, height);
+        }
+
+        // Calculate the actual row size (width * 4 bytes per pixel for RGBA)
+        let row_size = width * 4;
+
+        // If stride equals row size, we can copy directly
+        if stride == row_size {
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.diffuse_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row_size),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        } else {
+            // If stride is different, we need to copy row by row
+            let mut packed_data = Vec::with_capacity((width * height * 4) as usize);
+            for y in 0..height {
+                let row_start = (y * stride) as usize;
+                let row_end = row_start + row_size as usize;
+                packed_data.extend_from_slice(&data[row_start..row_end]);
+            }
+
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.diffuse_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &packed_data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row_size),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
