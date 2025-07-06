@@ -16,7 +16,8 @@ fn main() {
     println!("Opening file: {}\n", filename);
 
     // Video setup
-    let clip = clip::Clip::new(&filename).unwrap();
+    let mut clip = clip::Clip::new(&filename).unwrap();
+    let _ = clip.cache_all_frames();
 
     let link = Link::new();
     // Main loop

@@ -61,7 +61,7 @@ pub async fn run(mut link: crate::Link, mut clip: Clip) {
                             if elapsed >= frame_duration {
                                 link.update_phase_and_beat();
                                 // Get frame from clip and pass it to state
-                                let frame = clip.play_video_at_position(link.phase as f32).unwrap();
+                                let frame = clip.play_video_at_position(link.phase as f32);
 
                                 // Initialize texture with video dimensions on first frame
                                 if !texture_initialized {

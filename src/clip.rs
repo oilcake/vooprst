@@ -1,4 +1,5 @@
 use ffmpeg_next as ffmpeg;
+use log::{info, debug};
 
 pub struct Size {
     width: u32,
@@ -21,6 +22,7 @@ pub struct Clip {
     decoder: ffmpeg::codec::decoder::Video,
     scaler: ffmpeg::software::scaling::Context,
     pub size: Size,
+    frames: Vec<ffmpeg::util::frame::Video>,
 }
 
 impl Clip {
@@ -53,38 +55,54 @@ impl Clip {
             decoder,
             scaler,
             size: Size { width, height },
+            frames: Vec::new(),
         })
     }
 
-    pub fn play_video_at_position(
-        &mut self,
-        position: f32,
-    ) -> Result<ffmpeg::util::frame::Video, ffmpeg::Error> {
-        let stream = self.ctx.stream(self.video_stream_index).unwrap();
+    pub fn play_video_at_position(&mut self, position: f32) -> ffmpeg::util::frame::Video {
+        let frame_number = self.total_frames as f32 * position;
 
-        let duration = stream.duration(); // In stream timebase units
-        let target_ts = (duration as f32 * position).round() as i64;
-        let seek_ts = target_ts.max(0);
+        debug!("Getting frame {frame_number} from {} of frames, at position {position}", self.total_frames);
 
-        // Seek to the timestamp (in stream's timebase)
-        self.ctx.seek(seek_ts, ..)?;
+        self.frames[frame_number as usize].clone()
+    }
+    pub fn cache_all_frames(&mut self) -> Result<(), ffmpeg::Error> {
+        // let mut packet = ffmpeg::Packet::empty();
+        let mut decoded = ffmpeg::util::frame::Video::empty();
 
-        let mut frame = ffmpeg::util::frame::Video::empty();
-
+        // Read packets from the input file
         for (stream, packet) in self.ctx.packets() {
-            if stream.index() == self.video_stream_index {
-                self.decoder.send_packet(&packet)?;
+            if stream.index() != self.video_stream_index {
+                continue;
+            }
+            info!("Reading packet from stream {}", stream.index());
 
-                while self.decoder.receive_frame(&mut frame).is_ok() {
-                    if frame.timestamp().unwrap_or(0) >= seek_ts {
-                        let mut yuv_frame = ffmpeg::util::frame::Video::empty();
-                        self.scaler.run(&frame, &mut yuv_frame)?;
-                        return Ok(yuv_frame);
-                    }
-                }
+            // Send the packet to the decoder
+            self.decoder.send_packet(&packet)?;
+
+            // Receive all frames the decoder can produce from this packet
+            while self.decoder.receive_frame(&mut decoded).is_ok() {
+                // Clone the frame and store it (Video frame doesn't implement Copy)
+                let mut rgb = ffmpeg::util::frame::Video::empty();
+                rgb.set_format(ffmpeg::format::Pixel::RGBA);
+                rgb.set_width(self.size.width);
+                rgb.set_height(self.size.height);
+                self.scaler.run(&decoded, &mut rgb)?;
+                self.frames.push(rgb);
             }
         }
 
-        Err(ffmpeg::Error::StreamNotFound)
+        // Flush the decoder
+        self.decoder.send_eof()?;
+        while self.decoder.receive_frame(&mut decoded).is_ok() {
+            let mut rgb = ffmpeg::util::frame::Video::empty();
+            rgb.set_format(ffmpeg::format::Pixel::RGBA);
+            rgb.set_width(self.size.width);
+            rgb.set_height(self.size.height);
+            self.scaler.run(&decoded, &mut rgb)?;
+            self.frames.push(rgb);
+        }
+        info!("Cached {} frames", self.frames.len());
+        Ok(())
     }
 }

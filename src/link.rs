@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+use log::debug;
 use rusty_link::{AblLink, SessionState};
 
 pub struct Link {
@@ -14,7 +15,7 @@ impl Link {
         let link = AblLink::new(120.0);
         link.enable(true);
         let state = SessionState::new();
-        let quantum = 1.0;
+        let quantum = 4.0;
         Link {
             link,
             quantum,
@@ -28,8 +29,7 @@ impl Link {
         let now = self.link.clock_micros();
 
         self.beat = self.state.beat_at_time(now, self.quantum);
-        self.phase = self.state.phase_at_time(now, self.quantum);
-        print!("\rBeat: {:.2}, Phase: {:.2}", self.beat, self.phase);
-        let _ = io::stdout().flush();
+        self.phase = self.state.phase_at_time(now, self.quantum) / self.quantum;
+        debug!("Beat: {:.2}, Phase: {:.2}", self.beat, self.phase);
     }
 }
