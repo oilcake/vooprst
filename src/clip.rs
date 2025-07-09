@@ -6,15 +6,6 @@ pub struct Size {
     height: u32,
 }
 
-impl Size {
-    pub fn height(&self) -> u32 {
-        self.height
-    }
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-}
-
 pub struct Clip {
     ctx: ffmpeg::format::context::Input,
     video_stream_index: usize,

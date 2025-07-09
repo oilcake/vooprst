@@ -1,4 +1,3 @@
-use std::io::{self, Write};
 use log::debug;
 use rusty_link::{AblLink, SessionState};
 
