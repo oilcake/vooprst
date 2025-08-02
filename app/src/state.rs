@@ -1,7 +1,7 @@
 use crate::vertex::{Vertex, INDICES, VERTICES};
 use ffmpeg_next as ffmpeg;
 use wgpu::util::DeviceExt;
-use winit::{event::WindowEvent, window::Window};
+use winit::{event::{WindowEvent, KeyEvent}, window::{Window, Fullscreen}, keyboard::{KeyCode, PhysicalKey}};
 
 /// state of rendering engine
 pub struct State<'a> {
@@ -19,6 +19,7 @@ pub struct State<'a> {
     diffuse_texture: wgpu::Texture,
     texture_width: u32,
     texture_height: u32,
+    is_fullscreen: bool,
 }
 
 impl<'a> State<'a> {
@@ -233,6 +234,7 @@ impl<'a> State<'a> {
             diffuse_texture,
             texture_width: 1,
             texture_height: 1,
+            is_fullscreen: false,
         }
     }
 
@@ -322,8 +324,82 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn input(&mut self, _event: &WindowEvent) -> bool {
-        false
+    pub fn input(&mut self, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    physical_key,
+                    state: winit::event::ElementState::Pressed,
+                    ..
+                },
+                ..
+            } => {
+                log::info!("Key pressed: {:?}", physical_key);
+                match physical_key {
+                    PhysicalKey::Code(KeyCode::F11) => {
+                        log::info!("F11 key detected, toggling fullscreen");
+                        self.toggle_fullscreen();
+                        true
+                    }
+                    PhysicalKey::Code(KeyCode::Escape) => {
+                        log::info!("Escape key detected");
+                        if self.is_fullscreen {
+                            log::info!("Exiting fullscreen via Escape");
+                            self.exit_fullscreen();
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    PhysicalKey::Code(KeyCode::KeyF) => {
+                        log::info!("F key detected, toggling fullscreen");
+                        self.toggle_fullscreen();
+                        true
+                    }
+                    PhysicalKey::Code(KeyCode::Space) => {
+                        log::info!("Space key detected, toggling fullscreen");
+                        self.toggle_fullscreen();
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    pub fn toggle_fullscreen(&mut self) {
+        self.is_fullscreen = !self.is_fullscreen;
+        
+        if self.is_fullscreen {
+            // Enter fullscreen mode
+            self.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+        } else {
+            // Exit fullscreen mode
+            self.window.set_fullscreen(None);
+        }
+        
+        log::info!("Fullscreen toggled: {}", self.is_fullscreen);
+    }
+
+    pub fn exit_fullscreen(&mut self) {
+        if self.is_fullscreen {
+            self.is_fullscreen = false;
+            self.window.set_fullscreen(None);
+            log::info!("Exited fullscreen mode");
+        }
+    }
+
+    pub fn enter_fullscreen(&mut self) {
+        if !self.is_fullscreen {
+            self.is_fullscreen = true;
+            self.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+            log::info!("Entered fullscreen mode");
+        }
+    }
+
+    pub fn is_fullscreen(&self) -> bool {
+        self.is_fullscreen
     }
 
     pub fn update(&mut self) {

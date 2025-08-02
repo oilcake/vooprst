@@ -78,6 +78,9 @@ impl App {
                 WindowEvent::RedrawRequested => {
                     self.handle_redraw_request(elwt);
                 }
+                WindowEvent::Occluded(occluded) => {
+                    log::info!("Window occluded: {}", occluded);
+                }
                 _ => {}
             }
         }
