@@ -19,6 +19,8 @@ pub struct App {
     frame_limiter: FrameLimiter,
     files: Vec<PathBuf>,
     current_file_index: usize,
+    last_mouse_activity: Instant,
+    cursor_hidden: bool,
 }
 
 /// Helper struct for frame rate limiting
@@ -70,6 +72,8 @@ impl App {
             frame_limiter,
             files,
             current_file_index,
+            last_mouse_activity: Instant::now(),
+            cursor_hidden: false,
         }
     }
 
@@ -128,6 +132,20 @@ impl App {
 
     /// Handle window events
     pub fn handle_window_event(&mut self, event: &WindowEvent, elwt: &EventLoopWindowTarget<()>) {
+        // Handle mouse activity for cursor hiding
+        match event {
+            WindowEvent::CursorMoved { .. } => {
+                self.on_mouse_activity();
+            }
+            WindowEvent::MouseInput { .. } => {
+                self.on_mouse_activity();
+            }
+            WindowEvent::MouseWheel { .. } => {
+                self.on_mouse_activity();
+            }
+            _ => {}
+        }
+
         // First check for app-level keys before passing to state
         match event {
             WindowEvent::KeyboardInput {
@@ -173,6 +191,37 @@ impl App {
         }
     }
 
+    /// Handle mouse activity - show cursor and reset timer
+    fn on_mouse_activity(&mut self) {
+        self.last_mouse_activity = Instant::now();
+        if self.cursor_hidden {
+            self.show_cursor();
+        }
+    }
+
+    /// Show the cursor
+    fn show_cursor(&mut self) {
+        self.state.window().set_cursor_visible(true);
+        self.cursor_hidden = false;
+        log::debug!("Cursor shown");
+    }
+
+    /// Hide the cursor
+    fn hide_cursor(&mut self) {
+        self.state.window().set_cursor_visible(false);
+        self.cursor_hidden = true;
+        log::debug!("Cursor hidden");
+    }
+
+    /// Check if cursor should be hidden based on inactivity
+    fn update_cursor_visibility(&mut self) {
+        const CURSOR_HIDE_TIMEOUT: Duration = Duration::from_secs(1);
+        
+        if !self.cursor_hidden && self.last_mouse_activity.elapsed() >= CURSOR_HIDE_TIMEOUT {
+            self.hide_cursor();
+        }
+    }
+
     /// Handle window resize events
     fn handle_resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.surface_configured = true;
@@ -186,6 +235,9 @@ impl App {
         }
 
         if self.frame_limiter.should_render() {
+            // Update cursor visibility based on mouse inactivity
+            self.update_cursor_visibility();
+            
             // Update link timing
             self.link.update_phase_and_beat();
             
