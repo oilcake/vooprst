@@ -3,8 +3,8 @@ use bytemuck::{Pod, Zeroable};
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct Vertex {
-    pos: [f32; 2],
-    uv:  [f32; 2],
+    pub pos: [f32; 2],
+    pub uv:  [f32; 2],
 }
 impl Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 2] =
