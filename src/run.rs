@@ -3,106 +3,182 @@ use crate::state::State;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
-    event_loop::EventLoop,
+    event_loop::{EventLoop, EventLoopWindowTarget},
     keyboard::{KeyCode, PhysicalKey},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
-pub async fn run(mut link: crate::Link, mut clip: Clip) {
+/// App manages the application state and coordinates between different components
+pub struct App {
+    link: crate::Link,
+    clip: Clip,
+    state: State<'static>,
+    surface_configured: bool,
+    texture_initialized: bool,
+    frame_limiter: FrameLimiter,
+}
+
+/// Helper struct for frame rate limiting
+struct FrameLimiter {
+    target_fps: u32,
+    frame_duration: Duration,
+    last_frame_time: Instant,
+}
+
+impl FrameLimiter {
+    fn new(target_fps: u32) -> Self {
+        Self {
+            target_fps,
+            frame_duration: Duration::from_secs_f64(1.0 / target_fps as f64),
+            last_frame_time: Instant::now(),
+        }
+    }
+
+    fn should_render(&mut self) -> bool {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_frame_time);
+        
+        if elapsed >= self.frame_duration {
+            self.last_frame_time = now;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl App {
+    /// Create a new App instance with the given components
+    pub async fn new(window: &'static Window, link: crate::Link, clip: Clip) -> Self {
+        let state = State::new(window).await;
+        let frame_limiter = FrameLimiter::new(60); // 60 FPS target
+        
+        log::info!("Starting render loop with {} FPS target", frame_limiter.target_fps);
+        
+        // Request initial redraw
+        state.window().request_redraw();
+        
+        Self {
+            link,
+            clip,
+            state,
+            surface_configured: false,
+            texture_initialized: false,
+            frame_limiter,
+        }
+    }
+
+    /// Handle window events
+    pub fn handle_window_event(&mut self, event: &WindowEvent, elwt: &EventLoopWindowTarget<()>) {
+        if !self.state.input(event) {
+            match event {
+                WindowEvent::CloseRequested
+                | WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            state: ElementState::Pressed,
+                            physical_key: PhysicalKey::Code(KeyCode::Escape),
+                            ..
+                        },
+                    ..
+                } => elwt.exit(),
+                WindowEvent::Resized(physical_size) => {
+                    self.handle_resize(*physical_size);
+                }
+                WindowEvent::RedrawRequested => {
+                    self.handle_redraw_request(elwt);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Handle window resize events
+    fn handle_resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.surface_configured = true;
+        self.state.resize(new_size);
+    }
+
+    /// Handle redraw requests and perform rendering
+    fn handle_redraw_request(&mut self, elwt: &EventLoopWindowTarget<()>) {
+        if !self.surface_configured {
+            return;
+        }
+
+        if self.frame_limiter.should_render() {
+            // Update link timing
+            self.link.update_phase_and_beat();
+            
+            // Get current video frame
+            let frame = self.clip.play_video_at_position(self.link.phase as f32);
+
+            // Initialize texture on first frame
+            if !self.texture_initialized {
+                self.initialize_texture(&frame);
+            }
+
+            // Update rendering state with new frame
+            self.state.update_texture_with_frame(&frame);
+            self.state.update();
+            
+            // Render frame and handle errors
+            if let Err(error) = self.state.render() {
+                self.handle_render_error(error, elwt);
+            }
+        }
+
+        // Request next frame
+        self.state.window().request_redraw();
+    }
+
+    /// Initialize texture with video frame dimensions
+    fn initialize_texture(&mut self, frame: &ffmpeg_next::util::frame::Video) {
+        self.state.recreate_texture(
+            frame.width() as u32,
+            frame.height() as u32,
+        );
+        self.texture_initialized = true;
+    }
+
+    /// Handle rendering errors
+    fn handle_render_error(&mut self, error: wgpu::SurfaceError, elwt: &EventLoopWindowTarget<()>) {
+        match error {
+            // Reconfigure the surface if it's lost or outdated
+            wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
+                self.state.resize(self.state.size);
+            }
+            // The system is out of memory, we should quit
+            wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other => {
+                log::error!("Render error: {:?}", error);
+                elwt.exit();
+            }
+            // This happens when a frame takes too long to present
+            wgpu::SurfaceError::Timeout => {
+                log::warn!("Surface timeout");
+            }
+        }
+    }
+}
+
+/// Main entry point for the application
+pub async fn run(link: crate::Link, clip: Clip) {
     env_logger::init();
+    
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut state = State::new(&window).await;
-    let mut surface_configured = false;
-    let mut texture_initialized = false;
+    
+    // Create a static reference to the window (required for State lifetime)
+    let window: &'static Window = Box::leak(Box::new(window));
+    
+    let mut app = App::new(window, link, clip).await;
 
-    // Frame rate limiting
-    const TARGET_FPS: u32 = 60;
-    let frame_duration = Duration::from_secs_f64(1.0 / TARGET_FPS as f64);
-    let mut last_frame_time = Instant::now();
-
-    log::info!("Starting render loop with {} FPS target", TARGET_FPS);
-
-    // Request initial redraw
-    state.window().request_redraw();
-
-    // run()
     let _ = event_loop.run(move |event, control_flow| {
         match event {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == state.window().id() => {
-                if !state.input(event) {
-                    // UPDATED!
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            event:
-                                KeyEvent {
-                                    state: ElementState::Pressed,
-                                    physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => control_flow.exit(),
-                        WindowEvent::Resized(physical_size) => {
-                            surface_configured = true;
-                            state.resize(*physical_size);
-                        }
-                        WindowEvent::RedrawRequested => {
-                            if !surface_configured {
-                                return;
-                            }
-
-                            let now = Instant::now();
-                            let elapsed = now.duration_since(last_frame_time);
-
-                            if elapsed >= frame_duration {
-                                link.update_phase_and_beat();
-                                // Get frame from clip and pass it to state
-                                let frame = clip.play_video_at_position(link.phase as f32);
-
-                                // Initialize texture with video dimensions on first frame
-                                if !texture_initialized {
-                                    state.recreate_texture(
-                                        frame.width() as u32,
-                                        frame.height() as u32,
-                                    );
-                                    texture_initialized = true;
-                                }
-
-                                state.update_texture_with_frame(&frame);
-
-                                state.update();
-                                match state.render() {
-                                    Ok(_) => {}
-                                    // Reconfigure the surface if it's lost or outdated
-                                    Err(
-                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                                    ) => state.resize(state.size),
-                                    // The system is out of memory, we should probably quit
-                                    Err(
-                                        wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other,
-                                    ) => {
-                                        log::error!("OutOfMemory");
-                                        control_flow.exit();
-                                    }
-
-                                    // This happens when the a frame takes too long to present
-                                    Err(wgpu::SurfaceError::Timeout) => {
-                                        log::warn!("Surface timeout")
-                                    }
-                                }
-                                last_frame_time = now;
-                            }
-
-                            // Request next frame
-                            state.window().request_redraw();
-                        }
-                        _ => {}
-                    }
-                }
+            } if window_id == app.state.window().id() => {
+                app.handle_window_event(event, control_flow);
             }
             _ => {}
         }

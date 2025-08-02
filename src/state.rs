@@ -3,6 +3,7 @@ use ffmpeg_next as ffmpeg;
 use wgpu::util::DeviceExt;
 use winit::{event::WindowEvent, window::Window};
 
+/// state of rendering engine
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
