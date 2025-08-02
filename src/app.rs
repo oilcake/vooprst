@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 use winit::{
     event::*,
     event_loop::EventLoopWindowTarget,
-    keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
 
