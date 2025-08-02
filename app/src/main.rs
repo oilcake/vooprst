@@ -30,7 +30,12 @@ fn main() {
 pub async fn run(link: crate::Link, clip: clip::Clip) {
     
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("Voop Video Player")
+        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+        .with_min_inner_size(winit::dpi::LogicalSize::new(640, 360))
+        .build(&event_loop)
+        .unwrap();
     
     // Create a static reference to the window (required for State lifetime)
     let window: &'static Window = Box::leak(Box::new(window));
