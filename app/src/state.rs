@@ -20,6 +20,7 @@ pub struct State<'a> {
     texture_width: u32,
     texture_height: u32,
     is_fullscreen: bool,
+    video_aspect_ratio: f32,
 }
 
 impl<'a> State<'a> {
@@ -235,6 +236,7 @@ impl<'a> State<'a> {
             texture_width: 1,
             texture_height: 1,
             is_fullscreen: false,
+            video_aspect_ratio: 1.0,
         }
     }
 
@@ -311,6 +313,10 @@ impl<'a> State<'a> {
 
         self.texture_width = width;
         self.texture_height = height;
+        self.video_aspect_ratio = width as f32 / height as f32;
+        
+        // Update vertex buffer with new aspect ratio
+        self.update_vertex_buffer_for_aspect_ratio();
     }
 
     // impl State
@@ -321,6 +327,9 @@ impl<'a> State<'a> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            
+            // Update vertex buffer for new window aspect ratio
+            self.update_vertex_buffer_for_aspect_ratio();
         }
     }
 
@@ -400,6 +409,41 @@ impl<'a> State<'a> {
 
     pub fn is_fullscreen(&self) -> bool {
         self.is_fullscreen
+    }
+
+    /// Update vertex buffer to maintain video aspect ratio
+    fn update_vertex_buffer_for_aspect_ratio(&mut self) {
+        if self.video_aspect_ratio <= 0.0 {
+            return; // Skip if we don't have valid video dimensions yet
+        }
+
+        let window_aspect_ratio = self.size.width as f32 / self.size.height as f32;
+        
+        let (scale_x, scale_y) = if self.video_aspect_ratio > window_aspect_ratio {
+            // Video is wider than window - fit to width, letterbox top/bottom
+            (1.0, window_aspect_ratio / self.video_aspect_ratio)
+        } else {
+            // Video is taller than window - fit to height, pillarbox left/right
+            (self.video_aspect_ratio / window_aspect_ratio, 1.0)
+        };
+
+        // Create new vertices with aspect ratio correction
+        let corrected_vertices = [
+            Vertex { pos: [-scale_x, -scale_y], uv: [0.0, 1.0] },
+            Vertex { pos: [ scale_x, -scale_y], uv: [1.0, 1.0] },
+            Vertex { pos: [ scale_x,  scale_y], uv: [1.0, 0.0] },
+            Vertex { pos: [-scale_x,  scale_y], uv: [0.0, 0.0] },
+        ];
+
+        // Update the vertex buffer
+        self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("aspect_ratio_vertex_buffer"),
+            contents: bytemuck::cast_slice(&corrected_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        log::debug!("Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})", 
+                   self.video_aspect_ratio, window_aspect_ratio, scale_x, scale_y);
     }
 
     pub fn update(&mut self) {
