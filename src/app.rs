@@ -3,16 +3,16 @@ use crate::state::State;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
-    event_loop::{EventLoop, EventLoopWindowTarget},
+    event_loop::EventLoopWindowTarget,
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowBuilder},
+    window::Window,
 };
 
 /// App manages the application state and coordinates between different components
 pub struct App {
     link: crate::Link,
     clip: Clip,
-    state: State<'static>,
+    pub state: State<'static>,
     surface_configured: bool,
     texture_initialized: bool,
     frame_limiter: FrameLimiter,
@@ -158,29 +158,4 @@ impl App {
             }
         }
     }
-}
-
-/// Main entry point for the application
-pub async fn run(link: crate::Link, clip: Clip) {
-    env_logger::init();
-    
-    let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
-    
-    // Create a static reference to the window (required for State lifetime)
-    let window: &'static Window = Box::leak(Box::new(window));
-    
-    let mut app = App::new(window, link, clip).await;
-
-    let _ = event_loop.run(move |event, control_flow| {
-        match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == app.state.window().id() => {
-                app.handle_window_event(event, control_flow);
-            }
-            _ => {}
-        }
-    });
 }

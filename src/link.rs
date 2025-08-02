@@ -14,7 +14,7 @@ impl Link {
         let link = AblLink::new(120.0);
         link.enable(true);
         let state = SessionState::new();
-        let quantum = 4.0;
+        let quantum = 16.0;
         Link {
             link,
             quantum,
