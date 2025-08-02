@@ -1,9 +1,11 @@
 use crate::clip::Clip;
 use crate::state::State;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
     event_loop::EventLoopWindowTarget,
+    keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
 
@@ -15,6 +17,8 @@ pub struct App {
     surface_configured: bool,
     texture_initialized: bool,
     frame_limiter: FrameLimiter,
+    files: Vec<PathBuf>,
+    current_file_index: usize,
 }
 
 /// Helper struct for frame rate limiting
@@ -48,7 +52,7 @@ impl FrameLimiter {
 
 impl App {
     /// Create a new App instance with the given components
-    pub async fn new(window: &'static Window, link: crate::Link, clip: Clip) -> Self {
+    pub async fn new(window: &'static Window, link: crate::Link, clip: Clip, files: Vec<PathBuf>, current_file_index: usize) -> Self {
         let state = State::new(window).await;
         let frame_limiter = FrameLimiter::new(60); // 60 FPS target
         
@@ -64,11 +68,94 @@ impl App {
             surface_configured: false,
             texture_initialized: false,
             frame_limiter,
+            files,
+            current_file_index,
+        }
+    }
+
+    /// Handle left arrow press - load previous file
+    fn on_left_arrow(&mut self) {
+        if self.current_file_index > 0 {
+            self.load_file(self.current_file_index - 1);
+        } else {
+            log::info!("Already at first file");
+        }
+    }
+
+    /// Handle right arrow press - load next file
+    fn on_right_arrow(&mut self) {
+        if self.current_file_index < self.files.len() - 1 {
+            self.load_file(self.current_file_index + 1);
+        } else {
+            log::info!("Already at last file");
+        }
+    }
+
+    /// Load a file by index
+    fn load_file(&mut self, index: usize) {
+        if index >= self.files.len() {
+            log::error!("File index {} out of bounds (max: {})", index, self.files.len() - 1);
+            return;
+        }
+
+        let file_path = &self.files[index];
+        log::info!("Loading file {}/{}: {}", index + 1, self.files.len(), file_path.display());
+
+        match Clip::new(file_path.to_str().unwrap()) {
+            Ok(mut new_clip) => {
+                if let Err(e) = new_clip.cache_all_frames() {
+                    log::error!("Failed to cache frames for {}: {}", file_path.display(), e);
+                    return;
+                }
+                
+                self.clip = new_clip;
+                self.current_file_index = index;
+                self.texture_initialized = false; // Reset texture for new video dimensions
+                
+                // Update window title
+                let filename = file_path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("Unknown");
+                self.state.window().set_title(&format!("Voop Video Player - {}", filename));
+                
+                log::info!("Successfully loaded file: {}", filename);
+            }
+            Err(e) => {
+                log::error!("Failed to load file {}: {}", file_path.display(), e);
+            }
         }
     }
 
     /// Handle window events
     pub fn handle_window_event(&mut self, event: &WindowEvent, elwt: &EventLoopWindowTarget<()>) {
+        // First check for app-level keys before passing to state
+        match event {
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(KeyCode::ArrowLeft),
+                    state: winit::event::ElementState::Pressed,
+                    ..
+                },
+                ..
+            } => {
+                self.on_left_arrow();
+                return; // Don't pass to state
+            }
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(KeyCode::ArrowRight),
+                    state: winit::event::ElementState::Pressed,
+                    ..
+                },
+                ..
+            } => {
+                self.on_right_arrow();
+                return; // Don't pass to state
+            }
+            _ => {}
+        }
+
+        // Then handle other events through state or directly
         if !self.state.input(event) {
             match event {
                 WindowEvent::CloseRequested => elwt.exit(),

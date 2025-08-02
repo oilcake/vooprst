@@ -7,10 +7,19 @@ This document describes the fullscreen functionality implemented for the Voop Vi
 The video player now supports fullscreen mode with the following features:
 
 ### Keyboard Controls
+
+#### Fullscreen Controls (handled in State)
 - **F11 Key**: Toggle fullscreen mode on/off
 - **F Key**: Alternative fullscreen toggle (recommended for macOS)
 - **Space Key**: Simple fullscreen toggle
 - **Escape Key**: Exit fullscreen mode (only when in fullscreen)
+
+#### Video Navigation Controls (handled in App)
+- **Left Arrow**: Seek backwards by 5% of video
+- **Right Arrow**: Seek forwards by 5% of video
+- **Home Key**: Jump to beginning of video (0%)
+- **End Key**: Jump to end of video (100%)
+- **R Key**: Reset to automatic playback (link-based timing)
 
 ### macOS Note
 On macOS, F11 is bound to "Show Desktop" by default, which will move the window instead of toggling fullscreen. Use these alternatives:
