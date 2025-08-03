@@ -399,18 +399,6 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn enter_fullscreen(&mut self) {
-        if !self.is_fullscreen {
-            self.is_fullscreen = true;
-            self.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-            log::info!("Entered fullscreen mode");
-        }
-    }
-
-    pub fn is_fullscreen(&self) -> bool {
-        self.is_fullscreen
-    }
-
     /// Update vertex buffer to maintain video aspect ratio
     fn update_vertex_buffer_for_aspect_ratio(&mut self) {
         if self.video_aspect_ratio <= 0.0 {

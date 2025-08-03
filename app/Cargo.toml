@@ -7,13 +7,13 @@ resolver = "2"
 
 [dependencies]
 ffmpeg-next = "6"
-rusty_link = "0.4.5"
 env_logger = "0.11"
 winit = { version = "0.29", features = ["android-native-activity"] }
 log = "0.4"
 wgpu = "25.0"
 pollster = "0.3"
 bytemuck  = { version = "1.15", features = ["derive"] }
+transport = { path = "../transport" }
 
 [dependencies.image]
 version = "0.24"
