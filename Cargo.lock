@@ -142,7 +142,7 @@ dependencies = [
  "image",
  "log",
  "pollster",
- "rusty_link",
+ "transport",
  "wgpu",
  "winit",
 ]
@@ -1828,6 +1828,14 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "winnow",
+]
+
+[[package]]
+name = "transport"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "rusty_link",
 ]
 
 [[package]]

@@ -2,9 +2,8 @@ mod clip;
 mod app;
 mod state;
 mod vertex;
-mod link;
 
-use link::Link;
+use transport::link::Link;
 
 use ffmpeg_next as ffmpeg;
 use std::path::PathBuf;
