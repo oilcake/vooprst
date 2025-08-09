@@ -13,7 +13,8 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-fn main() {
+#[pollster::main]
+async fn main() {
     env_logger::init();
     ffmpeg::init().unwrap();
     let path_arg = std::env::args()
@@ -31,11 +32,7 @@ fn main() {
 
     let link = Link::new();
     // Main loop
-    pollster::block_on(run(link, clip, files, current_index));
-}
 
-/// Main entry point for the application
-pub async fn run(link: crate::Link, clip: clip::Clip, files: Vec<PathBuf>, current_index: usize) {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
         .with_title("Voop Video Player")
