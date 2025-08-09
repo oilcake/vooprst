@@ -50,13 +50,14 @@ impl Clip {
         })
     }
 
-    pub fn play_video_at_position(&mut self, position: f32) -> ffmpeg::util::frame::Video {
+    pub fn play_video_at_position(&self, position: f32) -> ffmpeg::util::frame::Video {
         let frame_number = self.total_frames as f32 * position;
 
         debug!("Getting frame {frame_number} from {} of frames, at position {position}", self.total_frames);
 
         self.frames[frame_number as usize].clone()
     }
+
     pub fn cache_all_frames(&mut self) -> Result<(), ffmpeg::Error> {
         // let mut packet = ffmpeg::Packet::empty();
         let mut decoded = ffmpeg::util::frame::Video::empty();
