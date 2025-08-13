@@ -56,6 +56,8 @@ async fn main() {
         _ => {}
     });
 }
+
+/// just roads all video files from provided path to a vec
 fn load_files(path_arg: &str) -> (Vec<PathBuf>, usize) {
     let path = PathBuf::from(&path_arg);
     // Determine if it's a file or directory
