@@ -141,6 +141,7 @@ dependencies = [
  "ffmpeg-next",
  "image",
  "log",
+ "once_cell",
  "pollster",
  "transport",
  "wgpu",

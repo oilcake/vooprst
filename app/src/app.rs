@@ -8,10 +8,10 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
+use crate::LINK;
 
 /// App manages the application state and coordinates between different components
 pub struct App {
-    link: crate::Link,
     clip: Clip,
     pub state: State<'static>,
     surface_configured: bool,
@@ -54,7 +54,7 @@ impl FrameLimiter {
 
 impl App {
     /// Create a new App instance with the given components
-    pub async fn new(window: &'static Window, link: crate::Link, clip: Clip, files: Vec<PathBuf>, current_file_index: usize) -> Self {
+    pub async fn new(window: &'static Window, clip: Clip, files: Vec<PathBuf>, current_file_index: usize) -> Self {
         let state = State::new(window).await;
         let frame_limiter = FrameLimiter::new(60); // 60 FPS target
         
@@ -64,7 +64,6 @@ impl App {
         state.window().request_redraw();
         
         Self {
-            link,
             clip,
             state,
             surface_configured: false,
@@ -239,10 +238,10 @@ impl App {
             self.update_cursor_visibility();
             
             // Update link timing
-            self.link.update_phase_and_beat();
+            LINK.lock().unwrap().update_phase_and_beat();
             
             // Get current video frame
-            let frame = self.clip.play_video_at_position(self.link.phase as f32);
+            let frame = self.clip.play_video_at_position(LINK.lock().unwrap().phase as f32);
 
             // Initialize texture on first frame
             if !self.texture_initialized {

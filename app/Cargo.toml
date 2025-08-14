@@ -12,6 +12,8 @@ winit = { version = "0.29", features = ["android-native-activity"] }
 log = "0.4"
 wgpu = "25.0"
 pollster = { version = "0.4", features = ["macro"] }
+once_cell = "1.21.3"
+
 bytemuck  = { version = "1.15", features = ["derive"] }
 transport = { path = "../transport" }
 
