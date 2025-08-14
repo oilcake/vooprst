@@ -6,12 +6,17 @@ mod vertex;
 use transport::link::Link;
 
 use ffmpeg_next as ffmpeg;
+use once_cell::sync::Lazy;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use winit::{
     event::Event,
     event_loop::EventLoop,
     window::{Window, WindowBuilder},
 };
+
+static LINK: Lazy<Mutex<Link>> = Lazy::new(|| Mutex::new(Link::new()));
+
 
 #[pollster::main]
 async fn main() {
@@ -30,7 +35,6 @@ async fn main() {
     let mut clip = clip::Clip::new(first_file.to_str().unwrap()).unwrap();
     let _ = clip.cache_all_frames();
 
-    let link = Link::new();
     // Main loop
 
     let event_loop = EventLoop::new().unwrap();
@@ -44,7 +48,7 @@ async fn main() {
     // Create a static reference to the window (required for State lifetime)
     let window: &'static Window = Box::leak(Box::new(window));
 
-    let mut app = app::App::new(window, link, clip, files, current_index).await;
+    let mut app = app::App::new(window, clip, files, current_index).await;
 
     let _ = event_loop.run(move |event, control_flow| match event {
         Event::WindowEvent {
