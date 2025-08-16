@@ -14,7 +14,6 @@ use crate::LINK;
 pub struct App {
     clip: Clip,
     pub state: State<'static>,
-    texture_initialized: bool,
     frame_limiter: FrameLimiter,
     files: Vec<PathBuf>,
     current_file_index: usize,
@@ -65,7 +64,6 @@ impl App {
         Self {
             clip,
             state,
-            texture_initialized: false,
             frame_limiter,
             files,
             current_file_index,
@@ -111,7 +109,6 @@ impl App {
                 
                 self.clip = new_clip;
                 self.current_file_index = index;
-                self.texture_initialized = false; // Reset texture for new video dimensions
                 
                 // Update window title
                 let filename = file_path.file_name()
@@ -236,11 +233,6 @@ impl App {
             // Get current video frame
             let frame = self.clip.play_video_at_position(LINK.lock().unwrap().phase as f32);
 
-            // Initialize texture on first frame
-            if !self.texture_initialized {
-                self.initialize_texture(&frame);
-            }
-
             // Update rendering state with new frame
             self.state.update_texture_with_frame(&frame);
             self.state.update();
@@ -253,15 +245,6 @@ impl App {
 
         // Request next frame
         self.state.window().request_redraw();
-    }
-
-    /// Initialize texture with video frame dimensions
-    fn initialize_texture(&mut self, frame: &ffmpeg_next::util::frame::Video) {
-        self.state.recreate_texture(
-            frame.width() as u32,
-            frame.height() as u32,
-        );
-        self.texture_initialized = true;
     }
 
     /// Handle rendering errors
