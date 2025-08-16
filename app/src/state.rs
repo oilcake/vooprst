@@ -6,7 +6,6 @@ use winit::{event::{WindowEvent, KeyEvent}, window::{Window, Fullscreen}, keyboa
 /// state of rendering engine
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
-    pub surface_configured: bool,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
@@ -238,7 +237,6 @@ impl<'a> State<'a> {
             texture_height: 1,
             is_fullscreen: false,
             video_aspect_ratio: 1.0,
-            surface_configured: false,
         }
     }
 

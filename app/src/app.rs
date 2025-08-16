@@ -221,16 +221,11 @@ impl App {
 
     /// Handle window resize events
     fn handle_resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.state.surface_configured = true;
         self.state.resize(new_size);
     }
 
     /// Handle redraw requests and perform rendering
     fn handle_redraw_request(&mut self, elwt: &EventLoopWindowTarget<()>) {
-        if !self.state.surface_configured {
-            return;
-        }
-
         if self.frame_limiter.should_render() {
             // Update cursor visibility based on mouse inactivity
             self.update_cursor_visibility();
