@@ -14,7 +14,6 @@ use crate::LINK;
 pub struct App {
     clip: Clip,
     pub state: State<'static>,
-    surface_configured: bool,
     texture_initialized: bool,
     frame_limiter: FrameLimiter,
     files: Vec<PathBuf>,
@@ -66,7 +65,6 @@ impl App {
         Self {
             clip,
             state,
-            surface_configured: false,
             texture_initialized: false,
             frame_limiter,
             files,
@@ -223,13 +221,13 @@ impl App {
 
     /// Handle window resize events
     fn handle_resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.surface_configured = true;
+        self.state.surface_configured = true;
         self.state.resize(new_size);
     }
 
     /// Handle redraw requests and perform rendering
     fn handle_redraw_request(&mut self, elwt: &EventLoopWindowTarget<()>) {
-        if !self.surface_configured {
+        if !self.state.surface_configured {
             return;
         }
 
