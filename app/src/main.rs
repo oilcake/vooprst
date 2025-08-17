@@ -35,21 +35,21 @@ async fn main() {
     let mut clip = clip::Clip::new(first_file.to_str().unwrap()).unwrap();
     let _ = clip.cache_all_frames();
 
-    // Main loop
-
-    let event_loop = EventLoop::new().unwrap();
+    // Event loop initialization 
+    let event_loop = EventLoop::new().expect("Somehow event loop creation failed");
     let window = WindowBuilder::new()
         .with_title("Voop Video Player")
         .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
         .with_min_inner_size(winit::dpi::LogicalSize::new(640, 360))
         .build(&event_loop)
-        .unwrap();
+        .expect("Couldn't init window");
 
     // Create a static reference to the window (required for State lifetime)
     let window: &'static Window = Box::leak(Box::new(window));
 
     let mut app = app::App::new(window, clip, files, current_index).await;
 
+    // Main loop
     let _ = event_loop.run(move |event, control_flow| match event {
         Event::WindowEvent {
             ref event,
