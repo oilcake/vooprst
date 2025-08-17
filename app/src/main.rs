@@ -50,7 +50,7 @@ async fn main() {
 
     let state = State::new(window).await;
 
-    let mut app = app::App::new(state, clip, files, current_index).await;
+    let mut app = app::App::new(state, clip, files, current_index);
 
     // Main loop
     let _ = event_loop.run(move |event, control_flow| match event {
