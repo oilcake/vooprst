@@ -41,7 +41,7 @@ async fn main() {
     // Create a static reference to the window (required for State lifetime)
     let window: &'static Window = Box::leak(Box::new(window));
 
-    let (frame_buffer_sndr, frame_buffer_rcv) = bounded::<Video>(1);
+    let (frame_buffer_sndr, frame_buffer_rcv) = bounded::<Video>(11);
 
     let _ = std::thread::spawn(move || {
         let (files, current_index) = load_files(&path_arg);
