@@ -1,8 +1,12 @@
 use crate::vertex::{Vertex, INDICES, VERTICES};
+use crossbeam_channel::Receiver;
 use ffmpeg_next::util::frame::Video;
 use wgpu::util::DeviceExt;
-use winit::{event::{WindowEvent, KeyEvent}, window::{Window, Fullscreen}, keyboard::{KeyCode, PhysicalKey}};
-use crossbeam_channel::Receiver;
+use winit::{
+    event::{KeyEvent, WindowEvent},
+    keyboard::{KeyCode, PhysicalKey},
+    window::{Fullscreen, Window},
+};
 
 /// state of rendering engine
 pub struct State<'a> {
@@ -241,7 +245,7 @@ impl<'a> State<'a> {
             texture_height: 1,
             is_fullscreen: false,
             video_aspect_ratio: 1.0,
-            frame_buffer
+            frame_buffer,
         }
     }
 
@@ -319,7 +323,7 @@ impl<'a> State<'a> {
         self.texture_width = width;
         self.texture_height = height;
         self.video_aspect_ratio = width as f32 / height as f32;
-        
+
         // Update vertex buffer with new aspect ratio
         self.update_vertex_buffer_for_aspect_ratio();
     }
@@ -332,7 +336,7 @@ impl<'a> State<'a> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            
+
             // Update vertex buffer for new window aspect ratio
             self.update_vertex_buffer_for_aspect_ratio();
         }
@@ -341,11 +345,12 @@ impl<'a> State<'a> {
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    physical_key,
-                    state: winit::event::ElementState::Pressed,
-                    ..
-                },
+                event:
+                    KeyEvent {
+                        physical_key,
+                        state: winit::event::ElementState::Pressed,
+                        ..
+                    },
                 ..
             } => {
                 log::info!("Key pressed: {:?}", physical_key);
@@ -384,15 +389,16 @@ impl<'a> State<'a> {
 
     pub fn toggle_fullscreen(&mut self) {
         self.is_fullscreen = !self.is_fullscreen;
-        
+
         if self.is_fullscreen {
             // Enter fullscreen mode
-            self.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+            self.window
+                .set_fullscreen(Some(Fullscreen::Borderless(None)));
         } else {
             // Exit fullscreen mode
             self.window.set_fullscreen(None);
         }
-        
+
         log::info!("Fullscreen toggled: {}", self.is_fullscreen);
     }
 
@@ -411,7 +417,7 @@ impl<'a> State<'a> {
         }
 
         let window_aspect_ratio = self.size.width as f32 / self.size.height as f32;
-        
+
         let (scale_x, scale_y) = if self.video_aspect_ratio > window_aspect_ratio {
             // Video is wider than window - fit to width, letterbox top/bottom
             (1.0, window_aspect_ratio / self.video_aspect_ratio)
@@ -422,24 +428,40 @@ impl<'a> State<'a> {
 
         // Create new vertices with aspect ratio correction
         let corrected_vertices = [
-            Vertex { pos: [-scale_x, -scale_y], uv: [0.0, 1.0] },
-            Vertex { pos: [ scale_x, -scale_y], uv: [1.0, 1.0] },
-            Vertex { pos: [ scale_x,  scale_y], uv: [1.0, 0.0] },
-            Vertex { pos: [-scale_x,  scale_y], uv: [0.0, 0.0] },
+            Vertex {
+                pos: [-scale_x, -scale_y],
+                uv: [0.0, 1.0],
+            },
+            Vertex {
+                pos: [scale_x, -scale_y],
+                uv: [1.0, 1.0],
+            },
+            Vertex {
+                pos: [scale_x, scale_y],
+                uv: [1.0, 0.0],
+            },
+            Vertex {
+                pos: [-scale_x, scale_y],
+                uv: [0.0, 0.0],
+            },
         ];
 
         // Update the vertex buffer
-        self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("aspect_ratio_vertex_buffer"),
-            contents: bytemuck::cast_slice(&corrected_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        self.vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("aspect_ratio_vertex_buffer"),
+                contents: bytemuck::cast_slice(&corrected_vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
         log::debug!("Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})", 
                    self.video_aspect_ratio, window_aspect_ratio, scale_x, scale_y);
     }
 
-    pub fn update_texture_with_frame(&mut self, frame: Video) {
+    pub fn update_texture_with_new_frame(&mut self) {
+        // Get current video frame
+        let frame = self.frame_buffer.recv().expect("failed to receive frame");
         let width = frame.width() as u32;
         let height = frame.height() as u32;
         let data = frame.data(0);

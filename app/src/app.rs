@@ -1,6 +1,4 @@
-use crate::clip::Clip;
 use crate::state::State;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
@@ -12,8 +10,6 @@ use winit::{
 pub struct App {
     pub state: State<'static>,
     frame_limiter: FrameLimiter,
-    // files: Vec<PathBuf>,
-    // current_file_index: usize,
     last_mouse_activity: Instant,
     cursor_hidden: bool,
 }
@@ -63,11 +59,8 @@ impl App {
         state.window().request_redraw();
 
         Self {
-            // clip,
             state,
             frame_limiter,
-            // files,
-            // current_file_index,
             last_mouse_activity: Instant::now(),
             cursor_hidden: false,
         }
@@ -88,40 +81,6 @@ impl App {
         //     self.load_file(self.current_file_index + 1);
         // } else {
         //     log::info!("Already at last file");
-        // }
-    }
-
-    /// Load a file by index
-    fn load_file(&mut self, index: usize) {
-        // if index >= self.files.len() {
-        //     log::error!("File index {} out of bounds (max: {})", index, self.files.len() - 1);
-        //     return;
-        // }
-        //
-        // let file_path = &self.files[index];
-        // log::info!("Loading file {}/{}: {}", index + 1, self.files.len(), file_path.display());
-        //
-        // match Clip::new(file_path.to_str().unwrap()) {
-        //     Ok(mut new_clip) => {
-        //         if let Err(e) = new_clip.cache_all_frames() {
-        //             log::error!("Failed to cache frames for {}: {}", file_path.display(), e);
-        //             return;
-        //         }
-        //
-        //         self.clip = new_clip;
-        //         self.current_file_index = index;
-        //
-        //         // Update window title
-        //         let filename = file_path.file_name()
-        //             .and_then(|name| name.to_str())
-        //             .unwrap_or("Unknown");
-        //         self.state.window().set_title(&format!("Voop Video Player - {}", filename));
-        //
-        //         log::info!("Successfully loaded file: {}", filename);
-        //     }
-        //     Err(e) => {
-        //         log::error!("Failed to load file {}: {}", file_path.display(), e);
-        //     }
         // }
     }
 
@@ -225,15 +184,9 @@ impl App {
             // Update cursor visibility based on mouse inactivity
             self.update_cursor_visibility();
 
-            // Get current video frame
-            let frame = self
-                .state
-                .frame_buffer
-                .recv()
-                .expect("failed to receive frame");
 
             // Update rendering state with new frame
-            self.state.update_texture_with_frame(frame);
+            self.state.update_texture_with_new_frame();
 
             // Render frame and handle errors
             if let Err(error) = self.state.render() {

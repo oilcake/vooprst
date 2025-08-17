@@ -10,16 +10,12 @@ use transport::link::Link;
 use crossbeam_channel::bounded;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::util::frame::Video;
-use once_cell::sync::Lazy;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use winit::{
     event::Event,
     event_loop::EventLoop,
     window::{Window, WindowBuilder},
 };
-
-// static LINK: Lazy<Mutex<Link>> = Lazy::new(|| Mutex::new(Link::new()));
 
 #[pollster::main]
 async fn main() {
