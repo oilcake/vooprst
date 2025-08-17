@@ -228,7 +228,6 @@ impl App {
 
             // Update rendering state with new frame
             self.state.update_texture_with_frame(&frame);
-            self.state.update();
             
             // Render frame and handle errors
             if let Err(error) = self.state.render() {

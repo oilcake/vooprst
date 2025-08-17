@@ -434,10 +434,6 @@ impl<'a> State<'a> {
                    self.video_aspect_ratio, window_aspect_ratio, scale_x, scale_y);
     }
 
-    pub fn update(&mut self) {
-        // todo!()
-    }
-
     pub fn update_texture_with_frame(&mut self, frame: &ffmpeg::util::frame::Video) {
         let width = frame.width() as u32;
         let height = frame.height() as u32;
