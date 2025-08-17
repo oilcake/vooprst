@@ -6,7 +6,6 @@ use winit::{
     event::*,
     event_loop::EventLoopWindowTarget,
     keyboard::{KeyCode, PhysicalKey},
-    window::Window,
 };
 use crate::LINK;
 
@@ -52,8 +51,7 @@ impl FrameLimiter {
 
 impl App {
     /// Create a new App instance with the given components
-    pub async fn new(window: &'static Window, clip: Clip, files: Vec<PathBuf>, current_file_index: usize) -> Self {
-        let state = State::new(window).await;
+    pub async fn new(state: State<'static>, clip: Clip, files: Vec<PathBuf>, current_file_index: usize) -> Self {
         let frame_limiter = FrameLimiter::new(60); // 60 FPS target
         
         log::info!("Starting render loop with {} FPS target", frame_limiter.target_fps);

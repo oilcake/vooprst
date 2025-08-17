@@ -4,6 +4,7 @@ mod state;
 mod vertex;
 
 use transport::link::Link;
+use crate::state::State;
 
 use ffmpeg_next as ffmpeg;
 use once_cell::sync::Lazy;
@@ -47,7 +48,9 @@ async fn main() {
     // Create a static reference to the window (required for State lifetime)
     let window: &'static Window = Box::leak(Box::new(window));
 
-    let mut app = app::App::new(window, clip, files, current_index).await;
+    let state = State::new(window).await;
+
+    let mut app = app::App::new(state, clip, files, current_index).await;
 
     // Main loop
     let _ = event_loop.run(move |event, control_flow| match event {
