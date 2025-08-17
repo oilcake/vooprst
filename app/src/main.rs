@@ -1,12 +1,15 @@
 mod app;
 mod clip;
+mod decoder;
 mod state;
 mod vertex;
 
-use transport::link::Link;
 use crate::state::State;
+use transport::link::Link;
 
+use crossbeam_channel::bounded;
 use ffmpeg_next as ffmpeg;
+use ffmpeg_next::util::frame::Video;
 use once_cell::sync::Lazy;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -16,8 +19,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-static LINK: Lazy<Mutex<Link>> = Lazy::new(|| Mutex::new(Link::new()));
-
+// static LINK: Lazy<Mutex<Link>> = Lazy::new(|| Mutex::new(Link::new()));
 
 #[pollster::main]
 async fn main() {
@@ -27,16 +29,7 @@ async fn main() {
         .nth(1)
         .expect("Please provide a video file or folder path");
 
-    let (files, current_index) = load_files(&path_arg);
-
-    // Load first file
-    let first_file = &files[current_index];
-    println!("Opening file: {}\n", first_file.display());
-
-    let mut clip = clip::Clip::new(first_file.to_str().unwrap()).unwrap();
-    let _ = clip.cache_all_frames();
-
-    // Event loop initialization 
+    // Event loop initialization
     let event_loop = EventLoop::new().expect("Somehow event loop creation failed");
     let window = WindowBuilder::new()
         .with_title("Voop Video Player")
@@ -48,9 +41,25 @@ async fn main() {
     // Create a static reference to the window (required for State lifetime)
     let window: &'static Window = Box::leak(Box::new(window));
 
-    let state = State::new(window).await;
+    let (frame_buffer_sndr, frame_buffer_rcv) = bounded::<Video>(1);
 
-    let mut app = app::App::new(state, clip, files, current_index);
+    let _ = std::thread::spawn(move || {
+        let (files, current_index) = load_files(&path_arg);
+
+        // Load first file
+        let first_file = &files[current_index];
+        println!("Opening file: {}\n", first_file.display());
+        let mut clip = clip::Clip::new(first_file.to_str().unwrap()).unwrap();
+        let _ = clip.cache_all_frames();
+        let link = Link::new();
+        let mut decoder = decoder::Decoder::new(clip, link, files, frame_buffer_sndr);
+        loop {
+            decoder.send_frame();
+        }
+    });
+    let state = State::new(window, frame_buffer_rcv).await;
+
+    let mut app = app::App::new(state);
 
     // Main loop
     let _ = event_loop.run(move |event, control_flow| match event {

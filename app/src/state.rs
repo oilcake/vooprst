@@ -1,7 +1,8 @@
 use crate::vertex::{Vertex, INDICES, VERTICES};
-use ffmpeg_next as ffmpeg;
+use ffmpeg_next::util::frame::Video;
 use wgpu::util::DeviceExt;
 use winit::{event::{WindowEvent, KeyEvent}, window::{Window, Fullscreen}, keyboard::{KeyCode, PhysicalKey}};
+use crossbeam_channel::Receiver;
 
 /// state of rendering engine
 pub struct State<'a> {
@@ -17,6 +18,9 @@ pub struct State<'a> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     diffuse_texture: wgpu::Texture,
+    // frame_buffer
+    // TODO: remove pub accessibility after proving channel works
+    pub frame_buffer: Receiver<Video>,
     texture_width: u32,
     texture_height: u32,
     is_fullscreen: bool,
@@ -25,7 +29,7 @@ pub struct State<'a> {
 
 impl<'a> State<'a> {
     // Creating some of the wgpu types requires async code
-    pub async fn new(window: &'a Window) -> State<'a> {
+    pub async fn new(window: &'a Window, frame_buffer: Receiver<Video>) -> State<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -237,6 +241,7 @@ impl<'a> State<'a> {
             texture_height: 1,
             is_fullscreen: false,
             video_aspect_ratio: 1.0,
+            frame_buffer
         }
     }
 
@@ -434,7 +439,7 @@ impl<'a> State<'a> {
                    self.video_aspect_ratio, window_aspect_ratio, scale_x, scale_y);
     }
 
-    pub fn update_texture_with_frame(&mut self, frame: &ffmpeg::util::frame::Video) {
+    pub fn update_texture_with_frame(&mut self, frame: Video) {
         let width = frame.width() as u32;
         let height = frame.height() as u32;
         let data = frame.data(0);

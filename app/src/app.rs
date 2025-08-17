@@ -7,15 +7,13 @@ use winit::{
     event_loop::EventLoopWindowTarget,
     keyboard::{KeyCode, PhysicalKey},
 };
-use crate::LINK;
 
 /// App manages the application state and coordinates between different components
 pub struct App {
-    clip: Clip,
     pub state: State<'static>,
     frame_limiter: FrameLimiter,
-    files: Vec<PathBuf>,
-    current_file_index: usize,
+    // files: Vec<PathBuf>,
+    // current_file_index: usize,
     last_mouse_activity: Instant,
     cursor_hidden: bool,
 }
@@ -39,7 +37,7 @@ impl FrameLimiter {
     fn should_render(&mut self) -> bool {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_frame_time);
-        
+
         if elapsed >= self.frame_duration {
             self.last_frame_time = now;
             true
@@ -51,20 +49,25 @@ impl FrameLimiter {
 
 impl App {
     /// Create a new App instance with the given components
-    pub fn new(state: State<'static>, clip: Clip, files: Vec<PathBuf>, current_file_index: usize) -> Self {
+    pub fn new(
+        state: State<'static>,
+    ) -> Self {
         let frame_limiter = FrameLimiter::new(60); // 60 FPS target
-        
-        log::info!("Starting render loop with {} FPS target", frame_limiter.target_fps);
-        
+
+        log::info!(
+            "Starting render loop with {} FPS target",
+            frame_limiter.target_fps
+        );
+
         // Request initial redraw
         state.window().request_redraw();
-        
+
         Self {
-            clip,
+            // clip,
             state,
             frame_limiter,
-            files,
-            current_file_index,
+            // files,
+            // current_file_index,
             last_mouse_activity: Instant::now(),
             cursor_hidden: false,
         }
@@ -72,54 +75,54 @@ impl App {
 
     /// Handle left arrow press - load previous file
     fn on_left_arrow(&mut self) {
-        if self.current_file_index > 0 {
-            self.load_file(self.current_file_index - 1);
-        } else {
-            log::info!("Already at first file");
-        }
+        //     if self.current_file_index > 0 {
+        //         self.load_file(self.current_file_index - 1);
+        //     } else {
+        //         log::info!("Already at first file");
+        //     }
     }
 
     /// Handle right arrow press - load next file
     fn on_right_arrow(&mut self) {
-        if self.current_file_index < self.files.len() - 1 {
-            self.load_file(self.current_file_index + 1);
-        } else {
-            log::info!("Already at last file");
-        }
+        // if self.current_file_index < self.files.len() - 1 {
+        //     self.load_file(self.current_file_index + 1);
+        // } else {
+        //     log::info!("Already at last file");
+        // }
     }
 
     /// Load a file by index
     fn load_file(&mut self, index: usize) {
-        if index >= self.files.len() {
-            log::error!("File index {} out of bounds (max: {})", index, self.files.len() - 1);
-            return;
-        }
-
-        let file_path = &self.files[index];
-        log::info!("Loading file {}/{}: {}", index + 1, self.files.len(), file_path.display());
-
-        match Clip::new(file_path.to_str().unwrap()) {
-            Ok(mut new_clip) => {
-                if let Err(e) = new_clip.cache_all_frames() {
-                    log::error!("Failed to cache frames for {}: {}", file_path.display(), e);
-                    return;
-                }
-                
-                self.clip = new_clip;
-                self.current_file_index = index;
-                
-                // Update window title
-                let filename = file_path.file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("Unknown");
-                self.state.window().set_title(&format!("Voop Video Player - {}", filename));
-                
-                log::info!("Successfully loaded file: {}", filename);
-            }
-            Err(e) => {
-                log::error!("Failed to load file {}: {}", file_path.display(), e);
-            }
-        }
+        // if index >= self.files.len() {
+        //     log::error!("File index {} out of bounds (max: {})", index, self.files.len() - 1);
+        //     return;
+        // }
+        //
+        // let file_path = &self.files[index];
+        // log::info!("Loading file {}/{}: {}", index + 1, self.files.len(), file_path.display());
+        //
+        // match Clip::new(file_path.to_str().unwrap()) {
+        //     Ok(mut new_clip) => {
+        //         if let Err(e) = new_clip.cache_all_frames() {
+        //             log::error!("Failed to cache frames for {}: {}", file_path.display(), e);
+        //             return;
+        //         }
+        //
+        //         self.clip = new_clip;
+        //         self.current_file_index = index;
+        //
+        //         // Update window title
+        //         let filename = file_path.file_name()
+        //             .and_then(|name| name.to_str())
+        //             .unwrap_or("Unknown");
+        //         self.state.window().set_title(&format!("Voop Video Player - {}", filename));
+        //
+        //         log::info!("Successfully loaded file: {}", filename);
+        //     }
+        //     Err(e) => {
+        //         log::error!("Failed to load file {}: {}", file_path.display(), e);
+        //     }
+        // }
     }
 
     /// Handle window events
@@ -141,22 +144,24 @@ impl App {
         // First check for app-level keys before passing to state
         match event {
             WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(KeyCode::ArrowLeft),
-                    state: winit::event::ElementState::Pressed,
-                    ..
-                },
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ArrowLeft),
+                        state: winit::event::ElementState::Pressed,
+                        ..
+                    },
                 ..
             } => {
                 self.on_left_arrow();
                 return; // Don't pass to state
             }
             WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(KeyCode::ArrowRight),
-                    state: winit::event::ElementState::Pressed,
-                    ..
-                },
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ArrowRight),
+                        state: winit::event::ElementState::Pressed,
+                        ..
+                    },
                 ..
             } => {
                 self.on_right_arrow();
@@ -208,7 +213,7 @@ impl App {
     /// Check if cursor should be hidden based on inactivity
     fn update_cursor_visibility(&mut self) {
         const CURSOR_HIDE_TIMEOUT: Duration = Duration::from_secs(1);
-        
+
         if !self.cursor_hidden && self.last_mouse_activity.elapsed() >= CURSOR_HIDE_TIMEOUT {
             self.hide_cursor();
         }
@@ -219,16 +224,17 @@ impl App {
         if self.frame_limiter.should_render() {
             // Update cursor visibility based on mouse inactivity
             self.update_cursor_visibility();
-            
-            // Update link timing
-            LINK.lock().unwrap().update_phase_and_beat();
-            
+
             // Get current video frame
-            let frame = self.clip.play_video_at_position(LINK.lock().unwrap().phase as f32);
+            let frame = self
+                .state
+                .frame_buffer
+                .recv()
+                .expect("failed to receive frame");
 
             // Update rendering state with new frame
-            self.state.update_texture_with_frame(&frame);
-            
+            self.state.update_texture_with_frame(frame);
+
             // Render frame and handle errors
             if let Err(error) = self.state.render() {
                 self.handle_render_error(error, elwt);
