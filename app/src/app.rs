@@ -1,4 +1,5 @@
 use crate::state::State;
+use crate::decoder::DecoderCommand;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
@@ -12,6 +13,7 @@ pub struct App {
     frame_limiter: FrameLimiter,
     last_mouse_activity: Instant,
     cursor_hidden: bool,
+    decoder_commander: crossbeam_channel::Sender<Option<DecoderCommand>>,
 }
 
 /// Helper struct for frame rate limiting
@@ -47,6 +49,7 @@ impl App {
     /// Create a new App instance with the given components
     pub fn new(
         state: State<'static>,
+        commander: crossbeam_channel::Sender<Option<DecoderCommand>>,
     ) -> Self {
         let frame_limiter = FrameLimiter::new(60); // 60 FPS target
 
@@ -63,25 +66,18 @@ impl App {
             frame_limiter,
             last_mouse_activity: Instant::now(),
             cursor_hidden: false,
+            decoder_commander: commander,
         }
     }
 
     /// Handle left arrow press - load previous file
     fn on_left_arrow(&mut self) {
-        //     if self.current_file_index > 0 {
-        //         self.load_file(self.current_file_index - 1);
-        //     } else {
-        //         log::info!("Already at first file");
-        //     }
+        self.decoder_commander.send(Some(DecoderCommand::PreviousFile)).unwrap();
     }
 
     /// Handle right arrow press - load next file
     fn on_right_arrow(&mut self) {
-        // if self.current_file_index < self.files.len() - 1 {
-        //     self.load_file(self.current_file_index + 1);
-        // } else {
-        //     log::info!("Already at last file");
-        // }
+        self.decoder_commander.send(Some(DecoderCommand::NextFile)).unwrap();
     }
 
     /// Handle window events

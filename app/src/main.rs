@@ -6,8 +6,9 @@ mod vertex;
 
 use crate::state::State;
 use transport::link::Link;
+use crate::decoder::DecoderCommand;
 
-use crossbeam_channel::bounded;
+use crossbeam_channel::{bounded, unbounded};
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::util::frame::Video;
 use std::path::PathBuf;
@@ -38,6 +39,7 @@ async fn main() {
     let window: &'static Window = Box::leak(Box::new(window));
 
     let (frame_buffer_sndr, frame_buffer_rcv) = bounded::<Video>(11);
+    let (command_sndr, command_rcv) = unbounded::<Option<DecoderCommand>>();
 
     let _ = std::thread::spawn(move || {
         let (files, current_index) = load_files(&path_arg);
@@ -48,14 +50,14 @@ async fn main() {
         let mut clip = clip::Clip::new(first_file.to_str().unwrap()).unwrap();
         let _ = clip.cache_all_frames();
         let link = Link::new();
-        let mut decoder = decoder::Decoder::new(clip, link, files, frame_buffer_sndr);
+        let mut decoder = decoder::Decoder::new(clip, link, files, frame_buffer_sndr, command_rcv);
         loop {
             decoder.send_frame();
         }
     });
     let state = State::new(window, frame_buffer_rcv).await;
 
-    let mut app = app::App::new(state);
+    let mut app = app::App::new(state, command_sndr);
 
     // Main loop
     let _ = event_loop.run(move |event, control_flow| match event {
