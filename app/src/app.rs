@@ -172,7 +172,7 @@ impl App {
             match event {
                 WindowEvent::CloseRequested => elwt.exit(),
                 WindowEvent::Resized(physical_size) => {
-                    self.handle_resize(*physical_size);
+                    self.state.resize(*physical_size);
                 }
                 WindowEvent::RedrawRequested => {
                     self.handle_redraw_request(elwt);
@@ -214,11 +214,6 @@ impl App {
         if !self.cursor_hidden && self.last_mouse_activity.elapsed() >= CURSOR_HIDE_TIMEOUT {
             self.hide_cursor();
         }
-    }
-
-    /// Handle window resize events
-    fn handle_resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.state.resize(new_size);
     }
 
     /// Handle redraw requests and perform rendering
