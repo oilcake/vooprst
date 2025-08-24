@@ -21,7 +21,10 @@ pub struct State<'a> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
-    diffuse_texture: wgpu::Texture,
+    // diffuse_texture: wgpu::Texture,
+    y_texture: wgpu::Texture,
+    u_texture: wgpu::Texture,
+    v_texture: wgpu::Texture,
     // frame_buffer
     // TODO: remove pub accessibility after proving channel works
     pub frame_buffer: Receiver<Video>,
@@ -100,37 +103,97 @@ impl<'a> State<'a> {
             height: 1,
             depth_or_array_layers: 1,
         };
-        let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_size,
+        // 1×1 текстуры для старта (R8Unorm)
+        let y_size = wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        };
+        let u_size = y_size;
+        let v_size = y_size;
+
+        let y_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: y_size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::R8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("diffuse_texture"),
+            label: Some("texY"),
+            view_formats: &[],
+        });
+        let u_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: u_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("texU"),
+            view_formats: &[],
+        });
+        let v_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: v_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("texV"),
             view_formats: &[],
         });
 
-        // Initialize with a single black pixel
-        let black_pixel = [0u8, 0u8, 0u8, 255u8];
+        // инициализация 1×1 нулями (не обязательно, но пусть будет)
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &diffuse_texture,
+                texture: &y_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &black_pixel,
+            &[0u8], // Y
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4),
+                bytes_per_row: Some(1),
                 rows_per_image: Some(1),
             },
-            texture_size,
+            y_size,
+        );
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &u_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &[128u8], // U = 0.5
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            u_size,
+        );
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &v_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &[128u8], // V = 0.5
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            v_size,
         );
 
-        // view + sampler
-        let diffuse_view = diffuse_texture.create_view(&Default::default());
+        let y_view = y_texture.create_view(&Default::default());
+        let u_view = u_texture.create_view(&Default::default());
+        let v_view = v_texture.create_view(&Default::default());
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -139,7 +202,7 @@ impl<'a> State<'a> {
             ..Default::default()
         });
 
-        // bind‑group layout + instance
+        // !!! Новый layout: 1 sampler + 3 текстуры
         let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -154,12 +217,32 @@ impl<'a> State<'a> {
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true }, // R8Unorm
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
             ],
-            label: Some("texture_bind_group_layout"),
+            label: Some("yuv_bind_group_layout"),
         });
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &tex_layout,
@@ -170,11 +253,95 @@ impl<'a> State<'a> {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_view),
+                    resource: wgpu::BindingResource::TextureView(&y_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&u_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&v_view),
                 },
             ],
-            label: Some("texture_bind_group"),
+            label: Some("yuv_bind_group"),
         });
+
+        // let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
+        //     size: texture_size,
+        //     mip_level_count: 1,
+        //     sample_count: 1,
+        //     dimension: wgpu::TextureDimension::D2,
+        //     format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        //     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        //     label: Some("diffuse_texture"),
+        //     view_formats: &[],
+        // });
+        //
+        // // Initialize with a single black pixel
+        // let black_pixel = [0u8, 0u8, 0u8, 255u8];
+        // queue.write_texture(
+        //     wgpu::TexelCopyTextureInfo {
+        //         texture: &diffuse_texture,
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     &black_pixel,
+        //     wgpu::TexelCopyBufferLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(4),
+        //         rows_per_image: Some(1),
+        //     },
+        //     texture_size,
+        // );
+        //
+        // // view + sampler
+        // let diffuse_view = diffuse_texture.create_view(&Default::default());
+        // let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
+        //     mag_filter: wgpu::FilterMode::Linear,
+        //     min_filter: wgpu::FilterMode::Linear,
+        //     ..Default::default()
+        // });
+        //
+        // // bind‑group layout + instance
+        // let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //     entries: &[
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 0,
+        //             visibility: wgpu::ShaderStages::FRAGMENT,
+        //             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        //             count: None,
+        //         },
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 1,
+        //             visibility: wgpu::ShaderStages::FRAGMENT,
+        //             ty: wgpu::BindingType::Texture {
+        //                 multisampled: false,
+        //                 view_dimension: wgpu::TextureViewDimension::D2,
+        //                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        //             },
+        //             count: None,
+        //         },
+        //     ],
+        //     label: Some("texture_bind_group_layout"),
+        // });
+        // let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     layout: &tex_layout,
+        //     entries: &[
+        //         wgpu::BindGroupEntry {
+        //             binding: 0,
+        //             resource: wgpu::BindingResource::Sampler(&sampler),
+        //         },
+        //         wgpu::BindGroupEntry {
+        //             binding: 1,
+        //             resource: wgpu::BindingResource::TextureView(&diffuse_view),
+        //         },
+        //     ],
+        //     label: Some("texture_bind_group"),
+        // });
 
         // shader & pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -240,7 +407,9 @@ impl<'a> State<'a> {
             vertex_buffer,
             index_buffer,
             num_indices: INDICES.len() as u32,
-            diffuse_texture,
+            y_texture,
+            u_texture,
+            v_texture,
             texture_width: 1,
             texture_height: 1,
             is_fullscreen: false,
@@ -253,26 +422,131 @@ impl<'a> State<'a> {
         &self.window
     }
 
-    pub fn recreate_texture(&mut self, width: u32, height: u32) {
-        let texture_size = wgpu::Extent3d {
+    // pub fn recreate_texture(&mut self, width: u32, height: u32) {
+    //     let texture_size = wgpu::Extent3d {
+    //         width,
+    //         height,
+    //         depth_or_array_layers: 1,
+    //     };
+    //
+    //     self.diffuse_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+    //         size: texture_size,
+    //         mip_level_count: 1,
+    //         sample_count: 1,
+    //         dimension: wgpu::TextureDimension::D2,
+    //         format: wgpu::TextureFormat::Rgba8UnormSrgb,
+    //         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+    //         label: Some("diffuse_texture"),
+    //         view_formats: &[],
+    //     });
+    //
+    //     // Recreate the texture view and bind group
+    //     let diffuse_view = self.diffuse_texture.create_view(&Default::default());
+    //     let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+    //         address_mode_u: wgpu::AddressMode::ClampToEdge,
+    //         address_mode_v: wgpu::AddressMode::ClampToEdge,
+    //         mag_filter: wgpu::FilterMode::Linear,
+    //         min_filter: wgpu::FilterMode::Linear,
+    //         ..Default::default()
+    //     });
+    //
+    //     let tex_layout = self
+    //         .device
+    //         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    //             entries: &[
+    //                 wgpu::BindGroupLayoutEntry {
+    //                     binding: 0,
+    //                     visibility: wgpu::ShaderStages::FRAGMENT,
+    //                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+    //                     count: None,
+    //                 },
+    //                 wgpu::BindGroupLayoutEntry {
+    //                     binding: 1,
+    //                     visibility: wgpu::ShaderStages::FRAGMENT,
+    //                     ty: wgpu::BindingType::Texture {
+    //                         multisampled: false,
+    //                         view_dimension: wgpu::TextureViewDimension::D2,
+    //                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
+    //                     },
+    //                     count: None,
+    //                 },
+    //             ],
+    //             label: Some("texture_bind_group_layout"),
+    //         });
+    //
+    //     self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+    //         layout: &tex_layout,
+    //         entries: &[
+    //             wgpu::BindGroupEntry {
+    //                 binding: 0,
+    //                 resource: wgpu::BindingResource::Sampler(&sampler),
+    //             },
+    //             wgpu::BindGroupEntry {
+    //                 binding: 1,
+    //                 resource: wgpu::BindingResource::TextureView(&diffuse_view),
+    //             },
+    //         ],
+    //         label: Some("texture_bind_group"),
+    //     });
+    //
+    //     self.texture_width = width;
+    //     self.texture_height = height;
+    //     self.video_aspect_ratio = width as f32 / height as f32;
+    //
+    //     // Update vertex buffer with new aspect ratio
+    //     self.update_vertex_buffer_for_aspect_ratio();
+    // }
+    pub fn recreate_yuv_textures(&mut self, width: u32, height: u32) {
+        // Y: WxH, U: W/2 x H/2, V: W/2 x H/2
+        let y_size = wgpu::Extent3d {
             width,
             height,
             depth_or_array_layers: 1,
         };
+        let uv_size = wgpu::Extent3d {
+            width: width / 2,
+            height: height / 2,
+            depth_or_array_layers: 1,
+        };
 
-        self.diffuse_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_size,
+        self.y_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: y_size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::R8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("diffuse_texture"),
+            label: Some("texY"),
+            view_formats: &[],
+        });
+        self.u_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: uv_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("texU"),
+            view_formats: &[],
+        });
+        self.v_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: uv_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("texV"),
             view_formats: &[],
         });
 
-        // Recreate the texture view and bind group
-        let diffuse_view = self.diffuse_texture.create_view(&Default::default());
+        // пересоздать views + bind group
+        let y_view = self.y_texture.create_view(&Default::default());
+        let u_view = self.u_texture.create_view(&Default::default());
+        let v_view = self.v_texture.create_view(&Default::default());
+
+        // (пере)создавать layout не обязательно — он такой же; но bind group пересобираем
+        // sampler лучше сохранить в поле, если хочешь — у меня он локальный в new()
         let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -281,29 +555,8 @@ impl<'a> State<'a> {
             ..Default::default()
         });
 
-        let tex_layout = self
-            .device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some("texture_bind_group_layout"),
-            });
+        // layout тот же, что в new(), переиспользуй его, если сохранил; здесь — коротко:
+        let tex_layout = self.render_pipeline.get_bind_group_layout(0); // можно так, раз layout в pipeline[0]
 
         self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &tex_layout,
@@ -314,17 +567,23 @@ impl<'a> State<'a> {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_view),
+                    resource: wgpu::BindingResource::TextureView(&y_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&u_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&v_view),
                 },
             ],
-            label: Some("texture_bind_group"),
+            label: Some("yuv_bind_group"),
         });
 
         self.texture_width = width;
         self.texture_height = height;
         self.video_aspect_ratio = width as f32 / height as f32;
-
-        // Update vertex buffer with new aspect ratio
         self.update_vertex_buffer_for_aspect_ratio();
     }
 
@@ -460,72 +719,197 @@ impl<'a> State<'a> {
     }
 
     pub fn update_texture_with_new_frame(&mut self) {
-        // Get current video frame
         let frame = self.frame_buffer.recv().expect("failed to receive frame");
         let width = frame.width() as u32;
         let height = frame.height() as u32;
-        let data = frame.data(0);
-        let stride = frame.stride(0) as u32;
 
-        // Check if we need to recreate the texture with new dimensions
+        // Проверим формат
+        let fmt = frame.format();
+        if fmt != ffmpeg_next::format::Pixel::YUV420P {
+            // На первом шаге поддерживаем только 420p.
+            // Тут можно: (а) вернуть рано, (б) залогировать, (в) временно игнорировать.
+            log::error!(
+                "Unsupported pixel format: {:?}. Expected YUV420P (8-bit).",
+                fmt
+            );
+            return;
+        }
+
+        // Пересоздать текстуры, если размер изменился
         if self.texture_width != width || self.texture_height != height {
-            self.recreate_texture(width, height);
+            self.recreate_yuv_textures(width, height);
         }
 
-        // Calculate the actual row size (width * 4 bytes per pixel for RGBA)
-        let row_size = width * 4;
+        // Плоскости
+        let y_data = frame.data(0);
+        let u_data = frame.data(1);
+        let v_data = frame.data(2);
 
-        // If stride equals row size, we can copy directly
-        if stride == row_size {
-            self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.diffuse_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                data,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(row_size),
-                    rows_per_image: Some(height),
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
-        } else {
-            // If stride is different, we need to copy row by row
-            let mut packed_data = Vec::with_capacity((width * height * 4) as usize);
-            for y in 0..height {
-                let row_start = (y * stride) as usize;
-                let row_end = row_start + row_size as usize;
-                packed_data.extend_from_slice(&data[row_start..row_end]);
+        let y_stride = frame.stride(0) as u32; // байт на строку
+        let u_stride = frame.stride(1) as u32;
+        let v_stride = frame.stride(2) as u32;
+
+        // ожидаемые длины строки
+        let y_row = width; // R8Unorm => 1 байт на пиксель
+        let u_row = width / 2;
+        let v_row = width / 2;
+
+        // helper: допаковать, если stride != row
+        fn copy_plane(
+            queue: &wgpu::Queue,
+            texture: &wgpu::Texture,
+            src: &[u8],
+            stride: u32,
+            w: u32,
+            h: u32,
+            row_bytes: u32,
+        ) {
+            if stride == row_bytes {
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    src,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(row_bytes),
+                        rows_per_image: Some(h),
+                    },
+                    wgpu::Extent3d {
+                        width: w,
+                        height: h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            } else {
+                let mut packed = Vec::with_capacity((row_bytes * h) as usize);
+                for y in 0..h {
+                    let from = (y * stride) as usize;
+                    let to = from + row_bytes as usize;
+                    packed.extend_from_slice(&src[from..to]);
+                }
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &packed,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(row_bytes),
+                        rows_per_image: Some(h),
+                    },
+                    wgpu::Extent3d {
+                        width: w,
+                        height: h,
+                        depth_or_array_layers: 1,
+                    },
+                );
             }
-
-            self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.diffuse_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &packed_data,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(row_size),
-                    rows_per_image: Some(height),
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
         }
+
+        // Y (WxH), U/V (W/2 x H/2)
+        copy_plane(
+            &self.queue,
+            &self.y_texture,
+            y_data,
+            y_stride,
+            width,
+            height,
+            y_row,
+        );
+        copy_plane(
+            &self.queue,
+            &self.u_texture,
+            u_data,
+            u_stride,
+            width / 2,
+            height / 2,
+            u_row,
+        );
+        copy_plane(
+            &self.queue,
+            &self.v_texture,
+            v_data,
+            v_stride,
+            width / 2,
+            height / 2,
+            v_row,
+        );
     }
+
+    // pub fn update_texture_with_new_frame(&mut self) {
+    //     // Get current video frame
+    //     let frame = self.frame_buffer.recv().expect("failed to receive frame");
+    //     let width = frame.width() as u32;
+    //     let height = frame.height() as u32;
+    //     let data = frame.data(0);
+    //     let stride = frame.stride(0) as u32;
+    //
+    //     // Check if we need to recreate the texture with new dimensions
+    //     if self.texture_width != width || self.texture_height != height {
+    //         self.recreate_texture(width, height);
+    //     }
+    //
+    //     // Calculate the actual row size (width * 4 bytes per pixel for RGBA)
+    //     let row_size = width * 4;
+    //
+    //     // If stride equals row size, we can copy directly
+    //     if stride == row_size {
+    //         self.queue.write_texture(
+    //             wgpu::TexelCopyTextureInfo {
+    //                 texture: &self.diffuse_texture,
+    //                 mip_level: 0,
+    //                 origin: wgpu::Origin3d::ZERO,
+    //                 aspect: wgpu::TextureAspect::All,
+    //             },
+    //             data,
+    //             wgpu::TexelCopyBufferLayout {
+    //                 offset: 0,
+    //                 bytes_per_row: Some(row_size),
+    //                 rows_per_image: Some(height),
+    //             },
+    //             wgpu::Extent3d {
+    //                 width,
+    //                 height,
+    //                 depth_or_array_layers: 1,
+    //             },
+    //         );
+    //     } else {
+    //         // If stride is different, we need to copy row by row
+    //         let mut packed_data = Vec::with_capacity((width * height * 4) as usize);
+    //         for y in 0..height {
+    //             let row_start = (y * stride) as usize;
+    //             let row_end = row_start + row_size as usize;
+    //             packed_data.extend_from_slice(&data[row_start..row_end]);
+    //         }
+    //
+    //         self.queue.write_texture(
+    //             wgpu::TexelCopyTextureInfo {
+    //                 texture: &self.diffuse_texture,
+    //                 mip_level: 0,
+    //                 origin: wgpu::Origin3d::ZERO,
+    //                 aspect: wgpu::TextureAspect::All,
+    //             },
+    //             &packed_data,
+    //             wgpu::TexelCopyBufferLayout {
+    //                 offset: 0,
+    //                 bytes_per_row: Some(row_size),
+    //                 rows_per_image: Some(height),
+    //             },
+    //             wgpu::Extent3d {
+    //                 width,
+    //                 height,
+    //                 depth_or_array_layers: 1,
+    //             },
+    //         );
+    //     }
+    // }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let frame = self.surface.get_current_texture()?;

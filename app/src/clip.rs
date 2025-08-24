@@ -1,18 +1,11 @@
 use ffmpeg_next as ffmpeg;
 use log::{info, debug};
 
-pub struct Size {
-    width: u32,
-    height: u32,
-}
-
 pub struct Clip {
     ctx: ffmpeg::format::context::Input,
     video_stream_index: usize,
     total_frames: f32,
     decoder: ffmpeg::codec::decoder::Video,
-    scaler: ffmpeg::software::scaling::Context,
-    pub size: Size,
     frames: Vec<ffmpeg::util::frame::Video>,
 }
 
@@ -24,28 +17,14 @@ impl Clip {
 
         let context_decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters())?;
         let decoder = context_decoder.decoder().video()?;
-        let width = decoder.width();
-        let height = decoder.height();
 
         let total_frames = input.frames() as f32;
-        let scaler = ffmpeg::software::scaling::Context::get(
-            decoder.format(),
-            width,
-            height,
-            ffmpeg::format::Pixel::RGBA,
-            width,
-            height,
-            ffmpeg::software::scaling::Flags::BILINEAR,
-        )
-        .unwrap();
 
         Ok(Clip {
             ctx,
             video_stream_index,
             total_frames,
             decoder,
-            scaler,
-            size: Size { width, height },
             frames: Vec::new(),
         })
     }
@@ -75,24 +54,14 @@ impl Clip {
             // Receive all frames the decoder can produce from this packet
             while self.decoder.receive_frame(&mut decoded).is_ok() {
                 // Clone the frame and store it (Video frame doesn't implement Copy)
-                let mut rgb = ffmpeg::util::frame::Video::empty();
-                rgb.set_format(ffmpeg::format::Pixel::RGBA);
-                rgb.set_width(self.size.width);
-                rgb.set_height(self.size.height);
-                self.scaler.run(&decoded, &mut rgb)?;
-                self.frames.push(rgb);
+                self.frames.push(decoded.clone());
             }
         }
 
         // Flush the decoder
         self.decoder.send_eof()?;
         while self.decoder.receive_frame(&mut decoded).is_ok() {
-            let mut rgb = ffmpeg::util::frame::Video::empty();
-            rgb.set_format(ffmpeg::format::Pixel::RGBA);
-            rgb.set_width(self.size.width);
-            rgb.set_height(self.size.height);
-            self.scaler.run(&decoded, &mut rgb)?;
-            self.frames.push(rgb);
+            self.frames.push(decoded.clone());
         }
         info!("Cached {} frames", self.frames.len());
         Ok(())
