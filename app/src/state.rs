@@ -99,13 +99,6 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        // Create a placeholder texture that will be updated with video frames
-        // We'll start with a 1x1 texture and resize it when we get the first frame
-        // let texture_size = wgpu::Extent3d {
-        //     width: 1,
-        //     height: 1,
-        //     depth_or_array_layers: 1,
-        // };
         // 1×1 текстуры для старта (R8Unorm)
         let y_size = wgpu::Extent3d {
             width: 1,
@@ -151,53 +144,6 @@ impl<'a> State<'a> {
             u: u_texture,
             v: v_texture,
         };
-
-        // // инициализация 1×1 нулями (не обязательно, но пусть будет)
-        // queue.write_texture(
-        //     wgpu::TexelCopyTextureInfo {
-        //         texture: &y_texture,
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //         aspect: wgpu::TextureAspect::All,
-        //     },
-        //     &[0u8], // Y
-        //     wgpu::TexelCopyBufferLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(1),
-        //         rows_per_image: Some(1),
-        //     },
-        //     y_size,
-        // );
-        // queue.write_texture(
-        //     wgpu::TexelCopyTextureInfo {
-        //         texture: &u_texture,
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //         aspect: wgpu::TextureAspect::All,
-        //     },
-        //     &[128u8], // U = 0.5
-        //     wgpu::TexelCopyBufferLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(1),
-        //         rows_per_image: Some(1),
-        //     },
-        //     u_size,
-        // );
-        // queue.write_texture(
-        //     wgpu::TexelCopyTextureInfo {
-        //         texture: &v_texture,
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //         aspect: wgpu::TextureAspect::All,
-        //     },
-        //     &[128u8], // V = 0.5
-        //     wgpu::TexelCopyBufferLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(1),
-        //         rows_per_image: Some(1),
-        //     },
-        //     v_size,
-        // );
 
         let y_view = yuv_texture.y.create_view(&Default::default());
         let u_view = yuv_texture.u.create_view(&Default::default());
@@ -275,82 +221,6 @@ impl<'a> State<'a> {
             ],
             label: Some("yuv_bind_group"),
         });
-
-        // let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
-        //     size: texture_size,
-        //     mip_level_count: 1,
-        //     sample_count: 1,
-        //     dimension: wgpu::TextureDimension::D2,
-        //     format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        //     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        //     label: Some("diffuse_texture"),
-        //     view_formats: &[],
-        // });
-        //
-        // // Initialize with a single black pixel
-        // let black_pixel = [0u8, 0u8, 0u8, 255u8];
-        // queue.write_texture(
-        //     wgpu::TexelCopyTextureInfo {
-        //         texture: &diffuse_texture,
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //         aspect: wgpu::TextureAspect::All,
-        //     },
-        //     &black_pixel,
-        //     wgpu::TexelCopyBufferLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(4),
-        //         rows_per_image: Some(1),
-        //     },
-        //     texture_size,
-        // );
-        //
-        // // view + sampler
-        // let diffuse_view = diffuse_texture.create_view(&Default::default());
-        // let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
-        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
-        //     mag_filter: wgpu::FilterMode::Linear,
-        //     min_filter: wgpu::FilterMode::Linear,
-        //     ..Default::default()
-        // });
-        //
-        // // bind‑group layout + instance
-        // let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        //     entries: &[
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 0,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-        //             count: None,
-        //         },
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 1,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Texture {
-        //                 multisampled: false,
-        //                 view_dimension: wgpu::TextureViewDimension::D2,
-        //                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
-        //             },
-        //             count: None,
-        //         },
-        //     ],
-        //     label: Some("texture_bind_group_layout"),
-        // });
-        // let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        //     layout: &tex_layout,
-        //     entries: &[
-        //         wgpu::BindGroupEntry {
-        //             binding: 0,
-        //             resource: wgpu::BindingResource::Sampler(&sampler),
-        //         },
-        //         wgpu::BindGroupEntry {
-        //             binding: 1,
-        //             resource: wgpu::BindingResource::TextureView(&diffuse_view),
-        //         },
-        //     ],
-        //     label: Some("texture_bind_group"),
-        // });
 
         // shader & pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -594,7 +464,6 @@ impl<'a> State<'a> {
         self.update_vertex_buffer_for_aspect_ratio();
     }
 
-    // impl State
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         log::info!("resize({}x{})", new_size.width, new_size.height);
         if new_size.width > 0 && new_size.height > 0 {
@@ -761,65 +630,6 @@ impl<'a> State<'a> {
         let u_row = width / 2;
         let v_row = width / 2;
 
-        // helper: допаковать, если stride != row
-        fn copy_plane(
-            queue: &wgpu::Queue,
-            texture: &wgpu::Texture,
-            src: &[u8],
-            stride: u32,
-            w: u32,
-            h: u32,
-            row_bytes: u32,
-        ) {
-            if stride == row_bytes {
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    src,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(row_bytes),
-                        rows_per_image: Some(h),
-                    },
-                    wgpu::Extent3d {
-                        width: w,
-                        height: h,
-                        depth_or_array_layers: 1,
-                    },
-                );
-            } else {
-                let mut packed = Vec::with_capacity((row_bytes * h) as usize);
-                for y in 0..h {
-                    let from = (y * stride) as usize;
-                    let to = from + row_bytes as usize;
-                    packed.extend_from_slice(&src[from..to]);
-                }
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &packed,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(row_bytes),
-                        rows_per_image: Some(h),
-                    },
-                    wgpu::Extent3d {
-                        width: w,
-                        height: h,
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
-        }
-
         // Y (WxH), U/V (W/2 x H/2)
         copy_plane(
             &self.queue,
@@ -849,74 +659,6 @@ impl<'a> State<'a> {
             v_row,
         );
     }
-
-    // pub fn update_texture_with_new_frame(&mut self) {
-    //     // Get current video frame
-    //     let frame = self.frame_buffer.recv().expect("failed to receive frame");
-    //     let width = frame.width() as u32;
-    //     let height = frame.height() as u32;
-    //     let data = frame.data(0);
-    //     let stride = frame.stride(0) as u32;
-    //
-    //     // Check if we need to recreate the texture with new dimensions
-    //     if self.texture_width != width || self.texture_height != height {
-    //         self.recreate_texture(width, height);
-    //     }
-    //
-    //     // Calculate the actual row size (width * 4 bytes per pixel for RGBA)
-    //     let row_size = width * 4;
-    //
-    //     // If stride equals row size, we can copy directly
-    //     if stride == row_size {
-    //         self.queue.write_texture(
-    //             wgpu::TexelCopyTextureInfo {
-    //                 texture: &self.diffuse_texture,
-    //                 mip_level: 0,
-    //                 origin: wgpu::Origin3d::ZERO,
-    //                 aspect: wgpu::TextureAspect::All,
-    //             },
-    //             data,
-    //             wgpu::TexelCopyBufferLayout {
-    //                 offset: 0,
-    //                 bytes_per_row: Some(row_size),
-    //                 rows_per_image: Some(height),
-    //             },
-    //             wgpu::Extent3d {
-    //                 width,
-    //                 height,
-    //                 depth_or_array_layers: 1,
-    //             },
-    //         );
-    //     } else {
-    //         // If stride is different, we need to copy row by row
-    //         let mut packed_data = Vec::with_capacity((width * height * 4) as usize);
-    //         for y in 0..height {
-    //             let row_start = (y * stride) as usize;
-    //             let row_end = row_start + row_size as usize;
-    //             packed_data.extend_from_slice(&data[row_start..row_end]);
-    //         }
-    //
-    //         self.queue.write_texture(
-    //             wgpu::TexelCopyTextureInfo {
-    //                 texture: &self.diffuse_texture,
-    //                 mip_level: 0,
-    //                 origin: wgpu::Origin3d::ZERO,
-    //                 aspect: wgpu::TextureAspect::All,
-    //             },
-    //             &packed_data,
-    //             wgpu::TexelCopyBufferLayout {
-    //                 offset: 0,
-    //                 bytes_per_row: Some(row_size),
-    //                 rows_per_image: Some(height),
-    //             },
-    //             wgpu::Extent3d {
-    //                 width,
-    //                 height,
-    //                 depth_or_array_layers: 1,
-    //             },
-    //         );
-    //     }
-    // }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let frame = self.surface.get_current_texture()?;
@@ -954,5 +696,64 @@ impl<'a> State<'a> {
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
         Ok(())
+    }
+}
+
+// helper: допаковать, если stride != row
+fn copy_plane(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    src: &[u8],
+    stride: u32,
+    w: u32,
+    h: u32,
+    row_bytes: u32,
+) {
+    if stride == row_bytes {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            src,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row_bytes),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+    } else {
+        let mut packed = Vec::with_capacity((row_bytes * h) as usize);
+        for y in 0..h {
+            let from = (y * stride) as usize;
+            let to = from + row_bytes as usize;
+            packed.extend_from_slice(&src[from..to]);
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &packed,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row_bytes),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 }
