@@ -7,6 +7,11 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Fullscreen, Window},
 };
+struct YUV {
+    y: wgpu::Texture,
+    u: wgpu::Texture,
+    v: wgpu::Texture,
+}
 
 /// state of rendering engine
 pub struct State<'a> {
@@ -22,9 +27,7 @@ pub struct State<'a> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     // diffuse_texture: wgpu::Texture,
-    y_texture: wgpu::Texture,
-    u_texture: wgpu::Texture,
-    v_texture: wgpu::Texture,
+    yuv_texture: YUV,
     // frame_buffer
     // TODO: remove pub accessibility after proving channel works
     pub frame_buffer: Receiver<Video>,
@@ -98,11 +101,11 @@ impl<'a> State<'a> {
 
         // Create a placeholder texture that will be updated with video frames
         // We'll start with a 1x1 texture and resize it when we get the first frame
-        let texture_size = wgpu::Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        };
+        // let texture_size = wgpu::Extent3d {
+        //     width: 1,
+        //     height: 1,
+        //     depth_or_array_layers: 1,
+        // };
         // 1×1 текстуры для старта (R8Unorm)
         let y_size = wgpu::Extent3d {
             width: 1,
@@ -143,56 +146,62 @@ impl<'a> State<'a> {
             view_formats: &[],
         });
 
-        // инициализация 1×1 нулями (не обязательно, но пусть будет)
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &y_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &[0u8], // Y
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(1),
-                rows_per_image: Some(1),
-            },
-            y_size,
-        );
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &u_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &[128u8], // U = 0.5
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(1),
-                rows_per_image: Some(1),
-            },
-            u_size,
-        );
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &v_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &[128u8], // V = 0.5
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(1),
-                rows_per_image: Some(1),
-            },
-            v_size,
-        );
+        let yuv_texture = YUV {
+            y: y_texture,
+            u: u_texture,
+            v: v_texture,
+        };
 
-        let y_view = y_texture.create_view(&Default::default());
-        let u_view = u_texture.create_view(&Default::default());
-        let v_view = v_texture.create_view(&Default::default());
+        // // инициализация 1×1 нулями (не обязательно, но пусть будет)
+        // queue.write_texture(
+        //     wgpu::TexelCopyTextureInfo {
+        //         texture: &y_texture,
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     &[0u8], // Y
+        //     wgpu::TexelCopyBufferLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(1),
+        //         rows_per_image: Some(1),
+        //     },
+        //     y_size,
+        // );
+        // queue.write_texture(
+        //     wgpu::TexelCopyTextureInfo {
+        //         texture: &u_texture,
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     &[128u8], // U = 0.5
+        //     wgpu::TexelCopyBufferLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(1),
+        //         rows_per_image: Some(1),
+        //     },
+        //     u_size,
+        // );
+        // queue.write_texture(
+        //     wgpu::TexelCopyTextureInfo {
+        //         texture: &v_texture,
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     &[128u8], // V = 0.5
+        //     wgpu::TexelCopyBufferLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(1),
+        //         rows_per_image: Some(1),
+        //     },
+        //     v_size,
+        // );
+
+        let y_view = yuv_texture.y.create_view(&Default::default());
+        let u_view = yuv_texture.u.create_view(&Default::default());
+        let v_view = yuv_texture.v.create_view(&Default::default());
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -345,7 +354,7 @@ impl<'a> State<'a> {
 
         // shader & pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("texture_shader"),
+            label: Some("yuv to rgba scaler"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -407,9 +416,7 @@ impl<'a> State<'a> {
             vertex_buffer,
             index_buffer,
             num_indices: INDICES.len() as u32,
-            y_texture,
-            u_texture,
-            v_texture,
+            yuv_texture,
             texture_width: 1,
             texture_height: 1,
             is_fullscreen: false,
@@ -509,7 +516,7 @@ impl<'a> State<'a> {
             depth_or_array_layers: 1,
         };
 
-        self.y_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        self.yuv_texture.y = self.device.create_texture(&wgpu::TextureDescriptor {
             size: y_size,
             mip_level_count: 1,
             sample_count: 1,
@@ -519,7 +526,7 @@ impl<'a> State<'a> {
             label: Some("texY"),
             view_formats: &[],
         });
-        self.u_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        self.yuv_texture.u = self.device.create_texture(&wgpu::TextureDescriptor {
             size: uv_size,
             mip_level_count: 1,
             sample_count: 1,
@@ -529,7 +536,7 @@ impl<'a> State<'a> {
             label: Some("texU"),
             view_formats: &[],
         });
-        self.v_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        self.yuv_texture.v = self.device.create_texture(&wgpu::TextureDescriptor {
             size: uv_size,
             mip_level_count: 1,
             sample_count: 1,
@@ -541,9 +548,9 @@ impl<'a> State<'a> {
         });
 
         // пересоздать views + bind group
-        let y_view = self.y_texture.create_view(&Default::default());
-        let u_view = self.u_texture.create_view(&Default::default());
-        let v_view = self.v_texture.create_view(&Default::default());
+        let y_view = self.yuv_texture.y.create_view(&Default::default());
+        let u_view = self.yuv_texture.u.create_view(&Default::default());
+        let v_view = self.yuv_texture.v.create_view(&Default::default());
 
         // (пере)создавать layout не обязательно — он такой же; но bind group пересобираем
         // sampler лучше сохранить в поле, если хочешь — у меня он локальный в new()
@@ -816,7 +823,7 @@ impl<'a> State<'a> {
         // Y (WxH), U/V (W/2 x H/2)
         copy_plane(
             &self.queue,
-            &self.y_texture,
+            &self.yuv_texture.y,
             y_data,
             y_stride,
             width,
@@ -825,7 +832,7 @@ impl<'a> State<'a> {
         );
         copy_plane(
             &self.queue,
-            &self.u_texture,
+            &self.yuv_texture.u,
             u_data,
             u_stride,
             width / 2,
@@ -834,7 +841,7 @@ impl<'a> State<'a> {
         );
         copy_plane(
             &self.queue,
-            &self.v_texture,
+            &self.yuv_texture.v,
             v_data,
             v_stride,
             width / 2,
