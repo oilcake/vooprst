@@ -26,11 +26,8 @@ pub struct State<'a> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
-    // diffuse_texture: wgpu::Texture,
     yuv_texture: YUV,
-    // frame_buffer
-    // TODO: remove pub accessibility after proving channel works
-    pub frame_buffer: Receiver<Video>,
+    frame_buffer: Receiver<Video>,
     texture_width: u32,
     texture_height: u32,
     is_fullscreen: bool,
@@ -299,80 +296,6 @@ impl<'a> State<'a> {
         &self.window
     }
 
-    // pub fn recreate_texture(&mut self, width: u32, height: u32) {
-    //     let texture_size = wgpu::Extent3d {
-    //         width,
-    //         height,
-    //         depth_or_array_layers: 1,
-    //     };
-    //
-    //     self.diffuse_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-    //         size: texture_size,
-    //         mip_level_count: 1,
-    //         sample_count: 1,
-    //         dimension: wgpu::TextureDimension::D2,
-    //         format: wgpu::TextureFormat::Rgba8UnormSrgb,
-    //         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-    //         label: Some("diffuse_texture"),
-    //         view_formats: &[],
-    //     });
-    //
-    //     // Recreate the texture view and bind group
-    //     let diffuse_view = self.diffuse_texture.create_view(&Default::default());
-    //     let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-    //         address_mode_u: wgpu::AddressMode::ClampToEdge,
-    //         address_mode_v: wgpu::AddressMode::ClampToEdge,
-    //         mag_filter: wgpu::FilterMode::Linear,
-    //         min_filter: wgpu::FilterMode::Linear,
-    //         ..Default::default()
-    //     });
-    //
-    //     let tex_layout = self
-    //         .device
-    //         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-    //             entries: &[
-    //                 wgpu::BindGroupLayoutEntry {
-    //                     binding: 0,
-    //                     visibility: wgpu::ShaderStages::FRAGMENT,
-    //                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-    //                     count: None,
-    //                 },
-    //                 wgpu::BindGroupLayoutEntry {
-    //                     binding: 1,
-    //                     visibility: wgpu::ShaderStages::FRAGMENT,
-    //                     ty: wgpu::BindingType::Texture {
-    //                         multisampled: false,
-    //                         view_dimension: wgpu::TextureViewDimension::D2,
-    //                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
-    //                     },
-    //                     count: None,
-    //                 },
-    //             ],
-    //             label: Some("texture_bind_group_layout"),
-    //         });
-    //
-    //     self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-    //         layout: &tex_layout,
-    //         entries: &[
-    //             wgpu::BindGroupEntry {
-    //                 binding: 0,
-    //                 resource: wgpu::BindingResource::Sampler(&sampler),
-    //             },
-    //             wgpu::BindGroupEntry {
-    //                 binding: 1,
-    //                 resource: wgpu::BindingResource::TextureView(&diffuse_view),
-    //             },
-    //         ],
-    //         label: Some("texture_bind_group"),
-    //     });
-    //
-    //     self.texture_width = width;
-    //     self.texture_height = height;
-    //     self.video_aspect_ratio = width as f32 / height as f32;
-    //
-    //     // Update vertex buffer with new aspect ratio
-    //     self.update_vertex_buffer_for_aspect_ratio();
-    // }
     pub fn recreate_yuv_textures(&mut self, width: u32, height: u32) {
         // Y: WxH, U: W/2 x H/2, V: W/2 x H/2
         let y_size = wgpu::Extent3d {
@@ -598,24 +521,29 @@ impl<'a> State<'a> {
         let frame = self.frame_buffer.recv().expect("failed to receive frame");
         let width = frame.width() as u32;
         let height = frame.height() as u32;
-
-        // Проверим формат
-        let fmt = frame.format();
-        if fmt != ffmpeg_next::format::Pixel::YUV420P {
-            // На первом шаге поддерживаем только 420p.
-            // Тут можно: (а) вернуть рано, (б) залогировать, (в) временно игнорировать.
-            log::error!(
-                "Unsupported pixel format: {:?}. Expected YUV420P (8-bit).",
-                fmt
-            );
-            return;
-        }
-
         // Пересоздать текстуры, если размер изменился
         if self.texture_width != width || self.texture_height != height {
             self.recreate_yuv_textures(width, height);
         }
 
+        // Проверим формат
+        let fmt = frame.format();
+        match fmt {
+            ffmpeg_next::format::Pixel::YUV420P => self.update_yuv_textures_with_new_yuv420p_frame(&frame),
+            _ => {
+                // На первом шаге поддерживаем только 420p.
+                // Тут можно: (а) вернуть рано, (б) залогировать, (в) временно игнорировать.
+                log::error!(
+                    "Unsupported pixel format: {:?}. Expected YUV420P (8-bit).",
+                    fmt
+                );
+                return;
+            }
+        }
+    }
+    fn update_yuv_textures_with_new_yuv420p_frame(&mut self, frame: &Video) {
+        let width = frame.width() as u32;
+        let height = frame.height() as u32;
         // Плоскости
         let y_data = frame.data(0);
         let u_data = frame.data(1);
