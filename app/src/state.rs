@@ -1,6 +1,6 @@
 use crate::vertex::{Vertex, INDICES, VERTICES};
 use crossbeam_channel::Receiver;
-use ffmpeg_next::util::frame::Video;
+use ffmpeg_next::{util::frame::Video, format::Pixel};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{KeyEvent, WindowEvent},
@@ -296,16 +296,22 @@ impl<'a> State<'a> {
         &self.window
     }
 
-    pub fn recreate_yuv_textures(&mut self, width: u32, height: u32) {
+    pub fn recreate_yuv_textures(&mut self, width: u32, height: u32, pixel_format: Pixel) {
         // Y: WxH, U: W/2 x H/2, V: W/2 x H/2
+        let texture_size_denominator = match pixel_format {
+            Pixel::YUV420P => 2,
+            Pixel::YUV422P => 1,
+            Pixel::YUV444P => 1,
+            _ => 1,
+        };
         let y_size = wgpu::Extent3d {
             width,
             height,
             depth_or_array_layers: 1,
         };
         let uv_size = wgpu::Extent3d {
-            width: width / 2,
-            height: height / 2,
+            width: width / texture_size_denominator,
+            height: height / texture_size_denominator,
             depth_or_array_layers: 1,
         };
 
@@ -521,15 +527,21 @@ impl<'a> State<'a> {
         let frame = self.frame_buffer.recv().expect("failed to receive frame");
         let width = frame.width() as u32;
         let height = frame.height() as u32;
-        // Пересоздать текстуры, если размер изменился
-        if self.texture_width != width || self.texture_height != height {
-            self.recreate_yuv_textures(width, height);
-        }
 
         // Проверим формат
         let fmt = frame.format();
+        // Пересоздать текстуры, если размер изменился
+        if self.texture_width != width || self.texture_height != height {
+            self.recreate_yuv_textures(width, height, fmt);
+        }
+
         match fmt {
-            ffmpeg_next::format::Pixel::YUV420P => self.update_yuv_textures_with_new_yuv420p_frame(&frame),
+            ffmpeg_next::format::Pixel::YUV420P => {
+                self.update_yuv_textures_with_new_yuv420p_frame(&frame)
+            }
+            ffmpeg_next::format::Pixel::YUV422P10LE => {
+                self.update_yuv_textures_with_new_yuv422p_frame(&frame)
+            }
             _ => {
                 // На первом шаге поддерживаем только 420p.
                 // Тут можно: (а) вернуть рано, (б) залогировать, (в) временно игнорировать.
@@ -541,6 +553,60 @@ impl<'a> State<'a> {
             }
         }
     }
+
+    fn update_yuv_textures_with_new_yuv422p_frame(&mut self, frame: &Video) {
+        let width = frame.width() as u32;
+        let height = frame.height() as u32;
+
+        // плоскости (10-бит, реально 16-бит в памяти)
+        let y_data = frame.data(0);
+        let u_data = frame.data(1);
+        let v_data = frame.data(2);
+
+        let y_stride = frame.stride(0) as u32; // байт на строку
+        let u_stride = frame.stride(1) as u32;
+        let v_stride = frame.stride(2) as u32;
+
+        // ожидаемые длины строки в байтах:
+        // R16Unorm = 2 байта на выборку
+        let y_row = width * 2;
+        let u_row = (width / 2) * 2;
+        let v_row = (width / 2) * 2;
+
+        // Y: W × H
+        copy_plane(
+            &self.queue,
+            &self.yuv_texture.y,
+            y_data,
+            y_stride,
+            width,
+            height,
+            y_row,
+        );
+
+        // U: W/2 × H
+        copy_plane(
+            &self.queue,
+            &self.yuv_texture.u,
+            u_data,
+            u_stride,
+            width / 2,
+            height,
+            u_row,
+        );
+
+        // V: W/2 × H
+        copy_plane(
+            &self.queue,
+            &self.yuv_texture.v,
+            v_data,
+            v_stride,
+            width / 2,
+            height,
+            v_row,
+        );
+    }
+
     fn update_yuv_textures_with_new_yuv420p_frame(&mut self, frame: &Video) {
         let width = frame.width() as u32;
         let height = frame.height() as u32;
