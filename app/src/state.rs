@@ -1,6 +1,7 @@
 use crate::vertex::{Vertex, INDICES, VERTICES};
 use crossbeam_channel::Receiver;
 use ffmpeg_next::{format::Pixel, util::frame::Video};
+use log::info;
 use wgpu::util::DeviceExt;
 use winit::{
     event::{KeyEvent, WindowEvent},
@@ -71,10 +72,12 @@ impl YUV {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 struct Params {
     chroma_mode: u32,
     bit_depth: u32,
+    _pad0: u32,
+    _pad1: u32,
 }
 
 /// state of rendering engine
@@ -129,11 +132,7 @@ impl<'a> State<'a> {
                 required_features: wgpu::Features::TEXTURE_FORMAT_16BIT_NORM,
                 // WebGL doesn't support all of wgpu's features, so if
                 // we're building for the web, we'll have to disable some.
-                required_limits: if cfg!(target_arch = "wasm32") {
-                    wgpu::Limits::downlevel_webgl2_defaults()
-                } else {
-                    wgpu::Limits::default()
-                },
+                required_limits: wgpu::Limits::default(),
                 label: None,
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
@@ -295,6 +294,43 @@ impl<'a> State<'a> {
             label: Some("yuv_bind_group"),
         });
 
+        // Uniform parameters to be passed to the shader
+        let params = Params {
+            chroma_mode: 0, // по умолчанию 420
+            bit_depth: 8,   // по умолчанию 8 бит
+            ..Default::default()
+        };
+
+        let param_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Params Buffer"),
+            contents: bytemuck::bytes_of(&params),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let param_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("params layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let param_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("params bind group"),
+            layout: &param_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: param_buffer.as_entire_binding(),
+            }],
+        });
+
         // shader & pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("yuv to rgba scaler"),
@@ -302,7 +338,7 @@ impl<'a> State<'a> {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline_layout"),
-            bind_group_layouts: &[&tex_layout],
+            bind_group_layouts: &[&tex_layout, &param_bind_group_layout],
             push_constant_ranges: &[],
         });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -345,40 +381,6 @@ impl<'a> State<'a> {
 
         // (‼️) configure the surface once up‑front
         surface.configure(&device, &config);
-
-        let params = Params {
-            chroma_mode: 0, // по умолчанию 420
-            bit_depth: 8,   // по умолчанию 8 бит
-        };
-
-        let param_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Params Buffer"),
-            contents: bytemuck::bytes_of(&params),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let param_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("params layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let param_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("params bind group"),
-            layout: &param_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: param_buffer.as_entire_binding(),
-            }],
-        });
 
         // final return
         Self {
@@ -656,10 +658,12 @@ impl<'a> State<'a> {
 
     fn update_yuv_textures_with_new_yuv422p_frame(&mut self, frame: &Video) {
         let new_params = Params {
-            chroma_mode: 0, // 422
-            bit_depth: 8,
+            chroma_mode: 1, // 422
+            bit_depth: 10,
+            ..Default::default()
         };
-        self.queue.write_buffer(&self.param_buffer, 0, bytemuck::bytes_of(&new_params));
+        self.queue
+            .write_buffer(&self.param_buffer, 0, bytemuck::bytes_of(&new_params));
 
         let width = frame.width() as u32;
         let height = frame.height() as u32;
@@ -670,14 +674,15 @@ impl<'a> State<'a> {
         let v_data = frame.data(2);
 
         let y_stride = frame.stride(0) as u32; // байт на строку
+        info!("Y stride with 422: {}", y_stride);
         let u_stride = frame.stride(1) as u32;
         let v_stride = frame.stride(2) as u32;
 
         // ожидаемые длины строки в байтах:
         // R16Unorm = 2 байта на выборку
         let y_row = width * 2;
-        let u_row = (width / 2) * 2;
-        let v_row = (width / 2) * 2;
+        let u_row = width;
+        let v_row = width;
 
         // Y: W × H
         copy_plane(
@@ -715,8 +720,9 @@ impl<'a> State<'a> {
 
     fn update_yuv_textures_with_new_yuv420p_frame(&mut self, frame: &Video) {
         let new_params = Params {
-            chroma_mode: 1, // 422
-            bit_depth: 10,
+            chroma_mode: 0, // 422
+            bit_depth: 8,
+            ..Default::default()
         };
         self.queue
             .write_buffer(&self.param_buffer, 0, bytemuck::bytes_of(&new_params));
