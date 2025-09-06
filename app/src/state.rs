@@ -1,6 +1,8 @@
+use crate::yuv::{YUV, Plane};
+
 use crate::vertex::{Vertex, INDICES, VERTICES};
 use crossbeam_channel::Receiver;
-use ffmpeg_next::{format::Pixel, util::frame::Video};
+use ffmpeg_next::util::frame::Video;
 use log::info;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -8,68 +10,6 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Fullscreen, Window},
 };
-
-struct Plane {
-    texture: wgpu::Texture,
-    size: wgpu::Extent3d,
-}
-
-struct YUV {
-    y: Plane,
-    u: Plane,
-    v: Plane,
-    format: wgpu::TextureFormat,
-}
-
-impl YUV {
-    fn adapt_size(&mut self, frame: &Video) {
-        match frame.format() {
-            Pixel::YUV420P => {
-                self.y.size = wgpu::Extent3d {
-                    width: frame.width(),
-                    height: frame.height(),
-                    depth_or_array_layers: 1,
-                };
-                self.u.size = wgpu::Extent3d {
-                    width: frame.width() / 2,
-                    height: frame.height() / 2,
-                    depth_or_array_layers: 1,
-                };
-                self.v.size = self.u.size;
-                self.format = wgpu::TextureFormat::R8Unorm;
-            }
-            Pixel::YUV422P10LE => {
-                self.y.size = wgpu::Extent3d {
-                    width: frame.width(),
-                    height: frame.height(),
-                    depth_or_array_layers: 1,
-                };
-                self.u.size = wgpu::Extent3d {
-                    width: frame.width() / 2,
-                    height: frame.height(),
-                    depth_or_array_layers: 1,
-                };
-                self.v.size = self.u.size;
-                self.format = wgpu::TextureFormat::R16Unorm;
-            }
-            Pixel::YUV444P => {
-                self.y.size = wgpu::Extent3d {
-                    width: frame.width(),
-                    height: frame.height(),
-                    depth_or_array_layers: 1,
-                };
-                self.u.size = wgpu::Extent3d {
-                    width: frame.width(),
-                    height: frame.height(),
-                    depth_or_array_layers: 1,
-                };
-                self.v.size = self.u.size;
-                self.format = wgpu::TextureFormat::R8Unorm;
-            }
-            _ => panic!("unsupported format: {:?}", frame.format()),
-        }
-    }
-}
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
@@ -621,7 +561,7 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        log::debug!("Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})", 
+        log::debug!("Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})",
                    self.video_aspect_ratio, window_aspect_ratio, scale_x, scale_y);
     }
 
@@ -678,11 +618,57 @@ impl<'a> State<'a> {
         let u_stride = frame.stride(1) as u32;
         let v_stride = frame.stride(2) as u32;
 
+        info!("422 Debug - Width: {}, Height: {}", width, height);
+        info!(
+            "422 Debug - Y stride: {}, U stride: {}, V stride: {}",
+            y_stride, u_stride, v_stride
+        );
+        info!(
+            "422 Debug - Y data len: {}, U data len: {}, V data len: {}",
+            y_data.len(),
+            u_data.len(),
+            v_data.len()
+        );
+
+        // Check first few bytes of U/V data to see if they're zeros
+        let u_sample = if u_data.len() >= 8 {
+            format!(
+                "{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                u_data[0],
+                u_data[1],
+                u_data[2],
+                u_data[3],
+                u_data[4],
+                u_data[5],
+                u_data[6],
+                u_data[7]
+            )
+        } else {
+            "not enough data".to_string()
+        };
+        let v_sample = if v_data.len() >= 8 {
+            format!(
+                "{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                v_data[0],
+                v_data[1],
+                v_data[2],
+                v_data[3],
+                v_data[4],
+                v_data[5],
+                v_data[6],
+                v_data[7]
+            )
+        } else {
+            "not enough data".to_string()
+        };
+        info!("422 Debug - U first bytes: {}", u_sample);
+        info!("422 Debug - V first bytes: {}", v_sample);
+
         // ожидаемые длины строки в байтах:
         // R16Unorm = 2 байта на выборку
         let y_row = width * 2;
-        let u_row = width;
-        let v_row = width;
+        let u_row = (width / 2) * 2; // U texture is width/2, R16Unorm = 2 bytes per pixel
+        let v_row = (width / 2) * 2; // V texture is width/2, R16Unorm = 2 bytes per pixel
 
         // Y: W × H
         copy_plane(

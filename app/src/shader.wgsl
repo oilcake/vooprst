@@ -46,13 +46,9 @@ fn yuv_to_rgb709(yuv: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    var uvY = in.uv;
-    var uvC = in.uv;
-
-
-    var Y = textureSample(texY, samp, uvY).r;
-    var U = textureSample(texU, samp, uvC).r;
-    var V = textureSample(texV, samp, uvC).r;
+    var Y = textureSample(texY, samp, in.uv).r;
+    var U = textureSample(texU, samp, in.uv).r;
+    var V = textureSample(texV, samp, in.uv).r;
 
     let rgb = yuv_to_rgb709(vec3<f32>(Y, U, V));
     return vec4<f32>(rgb, 1.0);

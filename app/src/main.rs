@@ -1,3 +1,4 @@
+mod yuv;
 mod app;
 mod clip;
 mod decoder;
