@@ -1,16 +1,80 @@
 use crate::vertex::{Vertex, INDICES, VERTICES};
 use crossbeam_channel::Receiver;
-use ffmpeg_next::{util::frame::Video, format::Pixel};
+use ffmpeg_next::{format::Pixel, util::frame::Video};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
     window::{Fullscreen, Window},
 };
+
+struct Plane {
+    texture: wgpu::Texture,
+    size: wgpu::Extent3d,
+}
+
 struct YUV {
-    y: wgpu::Texture,
-    u: wgpu::Texture,
-    v: wgpu::Texture,
+    y: Plane,
+    u: Plane,
+    v: Plane,
+    format: wgpu::TextureFormat,
+}
+
+impl YUV {
+    fn adapt_size(&mut self, frame: &Video) {
+        match frame.format() {
+            Pixel::YUV420P => {
+                self.y.size = wgpu::Extent3d {
+                    width: frame.width(),
+                    height: frame.height(),
+                    depth_or_array_layers: 1,
+                };
+                self.u.size = wgpu::Extent3d {
+                    width: frame.width() / 2,
+                    height: frame.height() / 2,
+                    depth_or_array_layers: 1,
+                };
+                self.v.size = self.u.size;
+                self.format = wgpu::TextureFormat::R8Unorm;
+            }
+            Pixel::YUV422P10LE => {
+                self.y.size = wgpu::Extent3d {
+                    width: frame.width(),
+                    height: frame.height(),
+                    depth_or_array_layers: 1,
+                };
+                self.u.size = wgpu::Extent3d {
+                    width: frame.width() / 2,
+                    height: frame.height(),
+                    depth_or_array_layers: 1,
+                };
+                self.v.size = self.u.size;
+                self.format = wgpu::TextureFormat::R16Unorm;
+            }
+            Pixel::YUV444P => {
+                self.y.size = wgpu::Extent3d {
+                    width: frame.width(),
+                    height: frame.height(),
+                    depth_or_array_layers: 1,
+                };
+                self.u.size = wgpu::Extent3d {
+                    width: frame.width(),
+                    height: frame.height(),
+                    depth_or_array_layers: 1,
+                };
+                self.v.size = self.u.size;
+                self.format = wgpu::TextureFormat::R8Unorm;
+            }
+            _ => panic!("unsupported format: {:?}", frame.format()),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Params {
+    chroma_mode: u32,
+    bit_depth: u32,
 }
 
 /// state of rendering engine
@@ -32,6 +96,8 @@ pub struct State<'a> {
     texture_height: u32,
     is_fullscreen: bool,
     video_aspect_ratio: f32,
+    param_buffer: wgpu::Buffer,
+    param_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> State<'a> {
@@ -60,7 +126,7 @@ impl<'a> State<'a> {
         dbg!(&adapter);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
+                required_features: wgpu::Features::TEXTURE_FORMAT_16BIT_NORM,
                 // WebGL doesn't support all of wgpu's features, so if
                 // we're building for the web, we'll have to disable some.
                 required_limits: if cfg!(target_arch = "wasm32") {
@@ -137,14 +203,24 @@ impl<'a> State<'a> {
         });
 
         let yuv_texture = YUV {
-            y: y_texture,
-            u: u_texture,
-            v: v_texture,
+            y: Plane {
+                texture: y_texture,
+                size: y_size,
+            },
+            u: Plane {
+                texture: u_texture,
+                size: u_size,
+            },
+            v: Plane {
+                texture: v_texture,
+                size: v_size,
+            },
+            format: wgpu::TextureFormat::R8Unorm,
         };
 
-        let y_view = yuv_texture.y.create_view(&Default::default());
-        let u_view = yuv_texture.u.create_view(&Default::default());
-        let v_view = yuv_texture.v.create_view(&Default::default());
+        let y_view = yuv_texture.y.texture.create_view(&Default::default());
+        let u_view = yuv_texture.u.texture.create_view(&Default::default());
+        let v_view = yuv_texture.v.texture.create_view(&Default::default());
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -270,6 +346,40 @@ impl<'a> State<'a> {
         // (‼️) configure the surface once up‑front
         surface.configure(&device, &config);
 
+        let params = Params {
+            chroma_mode: 0, // по умолчанию 420
+            bit_depth: 8,   // по умолчанию 8 бит
+        };
+
+        let param_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Params Buffer"),
+            contents: bytemuck::bytes_of(&params),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let param_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("params layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let param_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("params bind group"),
+            layout: &param_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: param_buffer.as_entire_binding(),
+            }],
+        });
+
         // final return
         Self {
             surface,
@@ -289,6 +399,8 @@ impl<'a> State<'a> {
             is_fullscreen: false,
             video_aspect_ratio: 1.0,
             frame_buffer,
+            param_buffer,
+            param_bind_group,
         }
     }
 
@@ -296,60 +408,45 @@ impl<'a> State<'a> {
         &self.window
     }
 
-    pub fn recreate_yuv_textures(&mut self, width: u32, height: u32, pixel_format: Pixel) {
+    pub fn recreate_yuv_textures(&mut self, frame: &Video) {
         // Y: WxH, U: W/2 x H/2, V: W/2 x H/2
-        let texture_size_denominator = match pixel_format {
-            Pixel::YUV420P => 2,
-            Pixel::YUV422P => 1,
-            Pixel::YUV444P => 1,
-            _ => 1,
-        };
-        let y_size = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-        let uv_size = wgpu::Extent3d {
-            width: width / texture_size_denominator,
-            height: height / texture_size_denominator,
-            depth_or_array_layers: 1,
-        };
 
-        self.yuv_texture.y = self.device.create_texture(&wgpu::TextureDescriptor {
-            size: y_size,
+        self.yuv_texture.adapt_size(&frame);
+        self.yuv_texture.y.texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: self.yuv_texture.y.size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format: self.yuv_texture.format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("texY"),
             view_formats: &[],
         });
-        self.yuv_texture.u = self.device.create_texture(&wgpu::TextureDescriptor {
-            size: uv_size,
+        self.yuv_texture.u.texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: self.yuv_texture.u.size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format: self.yuv_texture.format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("texU"),
             view_formats: &[],
         });
-        self.yuv_texture.v = self.device.create_texture(&wgpu::TextureDescriptor {
-            size: uv_size,
+        self.yuv_texture.v.texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: self.yuv_texture.v.size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format: self.yuv_texture.format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("texV"),
             view_formats: &[],
         });
 
         // пересоздать views + bind group
-        let y_view = self.yuv_texture.y.create_view(&Default::default());
-        let u_view = self.yuv_texture.u.create_view(&Default::default());
-        let v_view = self.yuv_texture.v.create_view(&Default::default());
+        let y_view = self.yuv_texture.y.texture.create_view(&Default::default());
+        let u_view = self.yuv_texture.u.texture.create_view(&Default::default());
+        let v_view = self.yuv_texture.v.texture.create_view(&Default::default());
 
         // (пере)создавать layout не обязательно — он такой же; но bind group пересобираем
         // sampler лучше сохранить в поле, если хочешь — у меня он локальный в new()
@@ -386,6 +483,9 @@ impl<'a> State<'a> {
             ],
             label: Some("yuv_bind_group"),
         });
+
+        let width = frame.width();
+        let height = frame.height();
 
         self.texture_width = width;
         self.texture_height = height;
@@ -532,7 +632,7 @@ impl<'a> State<'a> {
         let fmt = frame.format();
         // Пересоздать текстуры, если размер изменился
         if self.texture_width != width || self.texture_height != height {
-            self.recreate_yuv_textures(width, height, fmt);
+            self.recreate_yuv_textures(&frame);
         }
 
         match fmt {
@@ -555,6 +655,12 @@ impl<'a> State<'a> {
     }
 
     fn update_yuv_textures_with_new_yuv422p_frame(&mut self, frame: &Video) {
+        let new_params = Params {
+            chroma_mode: 0, // 422
+            bit_depth: 8,
+        };
+        self.queue.write_buffer(&self.param_buffer, 0, bytemuck::bytes_of(&new_params));
+
         let width = frame.width() as u32;
         let height = frame.height() as u32;
 
@@ -576,7 +682,7 @@ impl<'a> State<'a> {
         // Y: W × H
         copy_plane(
             &self.queue,
-            &self.yuv_texture.y,
+            &self.yuv_texture.y.texture,
             y_data,
             y_stride,
             width,
@@ -587,7 +693,7 @@ impl<'a> State<'a> {
         // U: W/2 × H
         copy_plane(
             &self.queue,
-            &self.yuv_texture.u,
+            &self.yuv_texture.u.texture,
             u_data,
             u_stride,
             width / 2,
@@ -598,7 +704,7 @@ impl<'a> State<'a> {
         // V: W/2 × H
         copy_plane(
             &self.queue,
-            &self.yuv_texture.v,
+            &self.yuv_texture.v.texture,
             v_data,
             v_stride,
             width / 2,
@@ -608,6 +714,13 @@ impl<'a> State<'a> {
     }
 
     fn update_yuv_textures_with_new_yuv420p_frame(&mut self, frame: &Video) {
+        let new_params = Params {
+            chroma_mode: 1, // 422
+            bit_depth: 10,
+        };
+        self.queue
+            .write_buffer(&self.param_buffer, 0, bytemuck::bytes_of(&new_params));
+
         let width = frame.width() as u32;
         let height = frame.height() as u32;
         // Плоскости
@@ -627,7 +740,7 @@ impl<'a> State<'a> {
         // Y (WxH), U/V (W/2 x H/2)
         copy_plane(
             &self.queue,
-            &self.yuv_texture.y,
+            &self.yuv_texture.y.texture,
             y_data,
             y_stride,
             width,
@@ -636,7 +749,7 @@ impl<'a> State<'a> {
         );
         copy_plane(
             &self.queue,
-            &self.yuv_texture.u,
+            &self.yuv_texture.u.texture,
             u_data,
             u_stride,
             width / 2,
@@ -645,7 +758,7 @@ impl<'a> State<'a> {
         );
         copy_plane(
             &self.queue,
-            &self.yuv_texture.v,
+            &self.yuv_texture.v.texture,
             v_data,
             v_stride,
             width / 2,
@@ -682,6 +795,7 @@ impl<'a> State<'a> {
 
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.texture_bind_group, &[]);
+            rpass.set_bind_group(1, &self.param_bind_group, &[]);
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             rpass.draw_indexed(0..self.num_indices, 0, 0..1);
