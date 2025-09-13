@@ -4,15 +4,6 @@
 // 2: texU
 // 3: texV
 // @group(1) layout:
-// 0: uniform Params { chroma_mode, bit_depth }
-
-struct Params {
-    chroma_mode : u32, // 0=420, 1=422, 2=444
-    bit_depth   : u32, // 8, 10, 12...
-    _pad0 : u32,
-    _pad1 : u32,
-};
-@group(1) @binding(0) var<uniform> params : Params;
 
 @group(0) @binding(0) var samp : sampler;
 @group(0) @binding(1) var texY : texture_2d<f32>;

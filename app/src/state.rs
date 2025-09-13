@@ -11,15 +11,6 @@ use winit::{
     window::{Fullscreen, Window},
 };
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
-struct Params {
-    chroma_mode: u32,
-    bit_depth: u32,
-    _pad0: u32,
-    _pad1: u32,
-}
-
 /// state of rendering engine
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
@@ -37,8 +28,6 @@ pub struct State<'a> {
     frame_buffer: Receiver<Video>,
     is_fullscreen: bool,
     video_aspect_ratio: f32,
-    param_buffer: wgpu::Buffer,
-    param_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> State<'a> {
@@ -64,7 +53,6 @@ impl<'a> State<'a> {
             })
             .await
             .unwrap();
-        dbg!(&adapter);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 required_features: wgpu::Features::TEXTURE_FORMAT_16BIT_NORM,
@@ -232,42 +220,6 @@ impl<'a> State<'a> {
             label: Some("yuv_bind_group"),
         });
 
-        // Uniform parameters to be passed to the shader
-        let params = Params {
-            chroma_mode: 0, // по умолчанию 420
-            bit_depth: 8,   // по умолчанию 8 бит
-            ..Default::default()
-        };
-
-        let param_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Params Buffer"),
-            contents: bytemuck::bytes_of(&params),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let param_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("params layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let param_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("params bind group"),
-            layout: &param_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: param_buffer.as_entire_binding(),
-            }],
-        });
 
         // shader & pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -276,7 +228,7 @@ impl<'a> State<'a> {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline_layout"),
-            bind_group_layouts: &[&tex_layout, &param_bind_group_layout],
+            bind_group_layouts: &[&tex_layout],
             push_constant_ranges: &[],
         });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -337,8 +289,6 @@ impl<'a> State<'a> {
             is_fullscreen: false,
             video_aspect_ratio: 1.0,
             frame_buffer,
-            param_buffer,
-            param_bind_group,
         }
     }
 
@@ -591,14 +541,6 @@ impl<'a> State<'a> {
     }
 
     fn update_yuv_textures_with_new_yuv422p_frame(&mut self, frame: &Video) {
-        let new_params = Params {
-            chroma_mode: 1, // 422
-            bit_depth: 10,
-            ..Default::default()
-        };
-        self.queue
-            .write_buffer(&self.param_buffer, 0, bytemuck::bytes_of(&new_params));
-
         let width = frame.width() as u32;
         let height = frame.height() as u32;
 
@@ -699,14 +641,6 @@ impl<'a> State<'a> {
     }
 
     fn update_yuv_textures_with_new_yuv420p_frame(&mut self, frame: &Video) {
-        let new_params = Params {
-            chroma_mode: 0, // 422
-            bit_depth: 8,
-            ..Default::default()
-        };
-        self.queue
-            .write_buffer(&self.param_buffer, 0, bytemuck::bytes_of(&new_params));
-
         let width = frame.width() as u32;
         let height = frame.height() as u32;
         // Плоскости
@@ -781,7 +715,6 @@ impl<'a> State<'a> {
 
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.texture_bind_group, &[]);
-            rpass.set_bind_group(1, &self.param_bind_group, &[]);
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             rpass.draw_indexed(0..self.num_indices, 0, 0..1);
