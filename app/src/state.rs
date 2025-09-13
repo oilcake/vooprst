@@ -35,8 +35,6 @@ pub struct State<'a> {
     num_indices: u32,
     yuv_texture: YUV,
     frame_buffer: Receiver<Video>,
-    texture_width: u32,
-    texture_height: u32,
     is_fullscreen: bool,
     video_aspect_ratio: f32,
     param_buffer: wgpu::Buffer,
@@ -336,8 +334,6 @@ impl<'a> State<'a> {
             index_buffer,
             num_indices: INDICES.len() as u32,
             yuv_texture,
-            texture_width: 1,
-            texture_height: 1,
             is_fullscreen: false,
             video_aspect_ratio: 1.0,
             frame_buffer,
@@ -429,8 +425,6 @@ impl<'a> State<'a> {
         let width = frame.width();
         let height = frame.height();
 
-        self.texture_width = width;
-        self.texture_height = height;
         self.video_aspect_ratio = width as f32 / height as f32;
         self.update_vertex_buffer_for_aspect_ratio();
     }
@@ -573,7 +567,7 @@ impl<'a> State<'a> {
         // Проверим формат
         let fmt = frame.format();
         // Пересоздать текстуры, если размер изменился
-        if self.texture_width != width || self.texture_height != height {
+        if self.yuv_texture.y.size.width != width || self.yuv_texture.y.size.height != height {
             self.recreate_yuv_textures(&frame);
         }
 
