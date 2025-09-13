@@ -552,53 +552,9 @@ impl<'a> State<'a> {
         let y_stride = frame.stride(0) as u32; // байт на строку
         info!("Y stride with 422: {}", y_stride);
         let u_stride = frame.stride(1) as u32;
+        info!("U stride with 422: {}", u_stride);
         let v_stride = frame.stride(2) as u32;
-
-        info!("422 Debug - Width: {}, Height: {}", width, height);
-        info!(
-            "422 Debug - Y stride: {}, U stride: {}, V stride: {}",
-            y_stride, u_stride, v_stride
-        );
-        info!(
-            "422 Debug - Y data len: {}, U data len: {}, V data len: {}",
-            y_data.len(),
-            u_data.len(),
-            v_data.len()
-        );
-
-        // Check first few bytes of U/V data to see if they're zeros
-        let u_sample = if u_data.len() >= 8 {
-            format!(
-                "{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                u_data[0],
-                u_data[1],
-                u_data[2],
-                u_data[3],
-                u_data[4],
-                u_data[5],
-                u_data[6],
-                u_data[7]
-            )
-        } else {
-            "not enough data".to_string()
-        };
-        let v_sample = if v_data.len() >= 8 {
-            format!(
-                "{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                v_data[0],
-                v_data[1],
-                v_data[2],
-                v_data[3],
-                v_data[4],
-                v_data[5],
-                v_data[6],
-                v_data[7]
-            )
-        } else {
-            "not enough data".to_string()
-        };
-        info!("422 Debug - U first bytes: {}", u_sample);
-        info!("422 Debug - V first bytes: {}", v_sample);
+        info!("V stride with 422: {}", v_stride);
 
         // ожидаемые длины строки в байтах:
         // R16Unorm = 2 байта на выборку
@@ -757,6 +713,8 @@ fn copy_plane(
             },
         );
     } else {
+        assert_eq!(stride, w * 2);
+        info!("Packing plane because stride != row");
         let mut packed = Vec::with_capacity((row_bytes * h) as usize);
         for y in 0..h {
             let from = (y * stride) as usize;
