@@ -1,11 +1,9 @@
-mod yuv;
 mod app;
 mod clip;
 mod decoder;
-mod state;
-mod vertex;
 
-use crate::state::State;
+use render::{state::State};
+
 use transport::link::Link;
 use crate::decoder::DecoderCommand;
 
