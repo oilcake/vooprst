@@ -1,5 +1,5 @@
 use render::state::State;
-use crate::decoder::DecoderCommand;
+use clip::decoder::DecoderCommand;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,

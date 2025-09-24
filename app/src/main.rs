@@ -1,11 +1,10 @@
 mod app;
-mod clip;
-mod decoder;
 
 use render::{state::State};
+use clip::{clip::Clip, decoder::Decoder};
 
 use transport::link::Link;
-use crate::decoder::DecoderCommand;
+use clip::decoder::DecoderCommand;
 
 use crossbeam_channel::{bounded, unbounded};
 use ffmpeg_next as ffmpeg;
@@ -46,10 +45,10 @@ async fn main() {
         // Load first file
         let first_file = &files[current_index];
         println!("Opening file: {}\n", first_file.display());
-        let mut clip = clip::Clip::new(first_file.to_str().unwrap()).unwrap();
+        let mut clip = Clip::new(first_file.to_str().unwrap()).unwrap();
         let _ = clip.cache_all_frames();
         let link = Link::new();
-        let mut decoder = decoder::Decoder::new(clip, link, files, frame_buffer_sndr, command_rcv);
+        let mut decoder = Decoder::new(clip, link, files, frame_buffer_sndr, command_rcv);
         loop {
             decoder.send_frame();
         }

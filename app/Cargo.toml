@@ -6,13 +6,15 @@ rust-version = "1.84"
 resolver = "2"
 
 [dependencies]
-env_logger = "0.11"
-log = "0.4"
 pollster = { version = "0.4", features = ["macro"] }
+
 crossbeam-channel.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 ffmpeg-next.workspace = true
+log.workspace = true
+env_logger.workspace = true
 
 transport = { path = "../transport" }
 render = { path = "../render" }
+clip = { path = "../clip" }

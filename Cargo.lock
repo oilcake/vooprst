@@ -130,6 +130,7 @@ dependencies = [
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "clip",
  "crossbeam-channel",
  "env_logger",
  "ffmpeg-next",
@@ -386,6 +387,16 @@ dependencies = [
  "glob",
  "libc",
  "libloading",
+]
+
+[[package]]
+name = "clip"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "ffmpeg-next",
+ "log",
+ "transport",
 ]
 
 [[package]]
@@ -1433,7 +1444,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
- "env_logger",
  "ffmpeg-next",
  "log",
  "wgpu",
