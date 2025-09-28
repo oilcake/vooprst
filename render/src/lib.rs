@@ -1,3 +1,4 @@
 pub mod state;
-pub mod vertex;
-pub mod yuv;
+mod vertex;
+mod yuv;
+mod pipeline;

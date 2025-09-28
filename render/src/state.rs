@@ -20,7 +20,7 @@ pub struct State<'a> {
     pub size: winit::dpi::PhysicalSize<u32>,
     window: &'a Window,
     texture_bind_group: wgpu::BindGroup,
-    render_pipeline: wgpu::RenderPipeline,
+    render_pipeline: crate::pipeline::Pipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
@@ -220,42 +220,8 @@ impl<'a> State<'a> {
             label: Some("yuv_bind_group"),
         });
 
-
-        // shader & pipeline
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("yuv to rgba scaler"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("pipeline_layout"),
-            bind_group_layouts: &[&tex_layout],
-            push_constant_ranges: &[],
-        });
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("texture_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"), // ← now Option<&str>
-                buffers: &[Vertex::layout()],
-                compilation_options: Default::default(), // ← new field
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"), // ← now Option<&str>
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(), // ← new field
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None, // ← new field
-        });
+        let pixel_format = ffmpeg_next::format::Pixel::YUV420P;
+        let render_pipeline = crate::pipeline::Pipeline::new(&device, pixel_format, &config, &tex_layout);
 
         // vertex / index buffers
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -347,7 +313,7 @@ impl<'a> State<'a> {
         });
 
         // layout тот же, что в new(), переиспользуй его, если сохранил; здесь — коротко:
-        let tex_layout = self.render_pipeline.get_bind_group_layout(0); // можно так, раз layout в pipeline[0]
+        let tex_layout = self.render_pipeline.inner.get_bind_group_layout(0); // можно так, раз layout в pipeline[0]
 
         self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &tex_layout,
@@ -669,7 +635,7 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            rpass.set_pipeline(&self.render_pipeline);
+            rpass.set_pipeline(&self.render_pipeline.inner);
             rpass.set_bind_group(0, &self.texture_bind_group, &[]);
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
