@@ -1,9 +1,10 @@
-use crate::yuv::{YUV, Plane};
+use crate::yuv::{Plane, YUV};
 
-use crate::vertex::{Vertex, INDICES, VERTICES};
+use crate::vertex::{INDICES, VERTICES, Vertex};
 use crossbeam_channel::Receiver;
+use ffmpeg_next::codec::debug;
 use ffmpeg_next::util::frame::Video;
-use log::info;
+use log::{debug, info};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{KeyEvent, WindowEvent},
@@ -221,7 +222,8 @@ impl<'a> State<'a> {
         });
 
         let pixel_format = ffmpeg_next::format::Pixel::YUV420P;
-        let render_pipeline = crate::pipeline::Pipeline::new(&device, pixel_format, &config, &tex_layout);
+        let render_pipeline =
+            crate::pipeline::Pipeline::new(&device, pixel_format, &config, &tex_layout);
 
         // vertex / index buffers
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -471,8 +473,13 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        log::debug!("Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})",
-                   self.video_aspect_ratio, window_aspect_ratio, scale_x, scale_y);
+        log::debug!(
+            "Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})",
+            self.video_aspect_ratio,
+            window_aspect_ratio,
+            scale_x,
+            scale_y
+        );
     }
 
     pub fn update_texture_with_new_frame(&mut self) {
@@ -492,7 +499,7 @@ impl<'a> State<'a> {
                 self.update_yuv_textures_with_new_yuv420p_frame(&frame)
             }
             ffmpeg_next::format::Pixel::YUV422P10LE => {
-                self.update_yuv_textures_with_new_yuv422p_frame(&frame)
+                self.update_yuv_textures_with_new_yuv422p10le_frame(&frame)
             }
             _ => {
                 // На первом шаге поддерживаем только 420p.
@@ -506,7 +513,7 @@ impl<'a> State<'a> {
         }
     }
 
-    fn update_yuv_textures_with_new_yuv422p_frame(&mut self, frame: &Video) {
+    fn update_yuv_textures_with_new_yuv422p10le_frame(&mut self, frame: &Video) {
         let width = frame.width() as u32;
         let height = frame.height() as u32;
 
@@ -516,11 +523,11 @@ impl<'a> State<'a> {
         let v_data = frame.data(2);
 
         let y_stride = frame.stride(0) as u32; // байт на строку
-        info!("Y stride with 422: {}", y_stride);
+        debug!("Y stride with 422: {}", y_stride);
         let u_stride = frame.stride(1) as u32;
-        info!("U stride with 422: {}", u_stride);
+        debug!("U stride with 422: {}", u_stride);
         let v_stride = frame.stride(2) as u32;
-        info!("V stride with 422: {}", v_stride);
+        debug!("V stride with 422: {}", v_stride);
 
         // ожидаемые длины строки в байтах:
         // R16Unorm = 2 байта на выборку
@@ -528,11 +535,15 @@ impl<'a> State<'a> {
         let u_row = (width / 2) * 2; // U texture is width/2, R16Unorm = 2 bytes per pixel
         let v_row = (width / 2) * 2; // V texture is width/2, R16Unorm = 2 bytes per pixel
 
+        let y_converted = convert_10bit_to_16unorm(y_data, width, height, y_stride);
+        let u_converted = convert_10bit_to_16unorm(u_data, width / 2, height, u_stride);
+        let v_converted = convert_10bit_to_16unorm(v_data, width / 2, height, v_stride);
+
         // Y: W × H
-        copy_plane(
+        copy_plane_16bit(
             &self.queue,
             &self.yuv_texture.y.texture,
-            y_data,
+            &y_converted,
             y_stride,
             width,
             height,
@@ -540,10 +551,10 @@ impl<'a> State<'a> {
         );
 
         // U: W/2 × H
-        copy_plane(
+        copy_plane_16bit(
             &self.queue,
             &self.yuv_texture.u.texture,
-            u_data,
+            &u_converted,
             u_stride,
             width / 2,
             height,
@@ -551,10 +562,10 @@ impl<'a> State<'a> {
         );
 
         // V: W/2 × H
-        copy_plane(
+        copy_plane_16bit(
             &self.queue,
             &self.yuv_texture.v.texture,
-            v_data,
+            &v_converted,
             v_stride,
             width / 2,
             height,
@@ -580,7 +591,7 @@ impl<'a> State<'a> {
         let v_row = width / 2;
 
         // Y (WxH), U/V (W/2 x H/2)
-        copy_plane(
+        copy_plane_8bit(
             &self.queue,
             &self.yuv_texture.y.texture,
             y_data,
@@ -589,7 +600,7 @@ impl<'a> State<'a> {
             height,
             y_row,
         );
-        copy_plane(
+        copy_plane_8bit(
             &self.queue,
             &self.yuv_texture.u.texture,
             u_data,
@@ -598,7 +609,7 @@ impl<'a> State<'a> {
             height / 2,
             u_row,
         );
-        copy_plane(
+        copy_plane_8bit(
             &self.queue,
             &self.yuv_texture.v.texture,
             v_data,
@@ -649,7 +660,7 @@ impl<'a> State<'a> {
 }
 
 // helper: допаковать, если stride != row
-fn copy_plane(
+fn copy_plane_8bit(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
     src: &[u8],
@@ -680,7 +691,7 @@ fn copy_plane(
         );
     } else {
         assert_eq!(stride, w * 2);
-        info!("Packing plane because stride != row");
+        panic!("Packing plane because stride != row");
         let mut packed = Vec::with_capacity((row_bytes * h) as usize);
         for y in 0..h {
             let from = (y * stride) as usize;
@@ -707,4 +718,86 @@ fn copy_plane(
             },
         );
     }
+}
+
+fn copy_plane_16bit(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    src: &[u8],
+    stride: u32,     // байт на строку в исходных данных
+    w: u32,          // ширина текстуры в пикселях
+    h: u32,          // высота текстуры в пикселях
+    row_bytes: u32,  // ожидаемая длина строки в байтах (w * 2)
+) {
+    if stride == row_bytes {
+        // Прямая загрузка если stride совпадает
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            src,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row_bytes),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+    } else {
+        // Перепаковка данных
+        let mut packed = Vec::with_capacity((row_bytes * h) as usize);
+        for y in 0..h {
+            let from = (y * stride) as usize;
+            let to = from + row_bytes as usize;
+            if to <= src.len() {
+                packed.extend_from_slice(&src[from..to]);
+            }
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &packed,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row_bytes),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+}
+
+fn convert_10bit_to_16unorm(src: &[u8], width: u32, height: u32, stride: u32) -> Vec<u8> {
+    let mut result = Vec::with_capacity((width * height * 2) as usize);
+    
+    for y in 0..height {
+        let row_start = (y * stride) as usize;
+        for x in 0..width {
+            let byte_offset = row_start + (x as usize * 2); // 2 bytes per 10-bit sample
+            if byte_offset + 1 < src.len() {
+                // Читаем 16-битное little-endian значение
+                let raw_value = u16::from_le_bytes([src[byte_offset], src[byte_offset + 1]]);
+                // Преобразуем 10-битное в 16-битное UNORM
+                let normalized = ((raw_value as f32) / 1023.0 * 65535.0) as u16;
+                result.extend_from_slice(&normalized.to_le_bytes());
+            }
+        }
+    }
+    
+    result
 }
