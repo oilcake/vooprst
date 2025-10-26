@@ -1,5 +1,5 @@
 use ffmpeg_next as ffmpeg;
-use log::{info, debug};
+use tracing::{info, debug};
 
 pub struct Clip {
     ctx: ffmpeg::format::context::Input,

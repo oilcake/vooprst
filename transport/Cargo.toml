@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 rusty_link = "0.4.5"
-log = "0.4"
+
+tracing.workspace = true

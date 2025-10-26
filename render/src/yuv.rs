@@ -29,7 +29,7 @@ impl YUV {
                 self.v.size = self.u.size;
                 self.format = wgpu::TextureFormat::R8Unorm;
             }
-            Pixel::YUV422P10LE => {
+            Pixel::YUV422P10LE | Pixel::YUV422P12LE => {
                 self.y.size = wgpu::Extent3d {
                     width: frame.width(),
                     height: frame.height(),

@@ -1,5 +1,6 @@
 use render::state::State;
 use clip::decoder::DecoderCommand;
+use tracing::{debug, info, warn, error};
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
@@ -53,7 +54,7 @@ impl App {
     ) -> Self {
         let frame_limiter = FrameLimiter::new(60); // 60 FPS target
 
-        log::info!(
+        info!(
             "Starting render loop with {} FPS target",
             frame_limiter.target_fps
         );
@@ -136,7 +137,7 @@ impl App {
                     self.handle_redraw_request(elwt);
                 }
                 WindowEvent::Occluded(occluded) => {
-                    log::info!("Window occluded: {}", occluded);
+                    info!("Window occluded: {}", occluded);
                 }
                 _ => {}
             }
@@ -155,14 +156,14 @@ impl App {
     fn show_cursor(&mut self) {
         self.state.window().set_cursor_visible(true);
         self.cursor_hidden = false;
-        log::debug!("Cursor shown");
+        debug!("Cursor shown");
     }
 
     /// Hide the cursor
     fn hide_cursor(&mut self) {
         self.state.window().set_cursor_visible(false);
         self.cursor_hidden = true;
-        log::debug!("Cursor hidden");
+        debug!("Cursor hidden");
     }
 
     /// Check if cursor should be hidden based on inactivity
@@ -203,12 +204,12 @@ impl App {
             }
             // The system is out of memory, we should quit
             wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other => {
-                log::error!("Render error: {:?}", error);
+                error!("Render error: {:?}", error);
                 elwt.exit();
             }
             // This happens when a frame takes too long to present
             wgpu::SurfaceError::Timeout => {
-                log::warn!("Surface timeout");
+                warn!("Surface timeout");
             }
         }
     }

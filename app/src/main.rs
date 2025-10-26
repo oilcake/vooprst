@@ -1,15 +1,17 @@
 mod app;
 
-use render::{state::State};
 use clip::{clip::Clip, decoder::Decoder};
+use render::state::State;
 
-use transport::link::Link;
 use clip::decoder::DecoderCommand;
+use transport::link::Link;
 
 use crossbeam_channel::{bounded, unbounded};
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::util::frame::Video;
 use std::path::PathBuf;
+use tracing_subscriber::FmtSubscriber;
+use tracing::{info, Level};
 use winit::{
     event::Event,
     event_loop::EventLoop,
@@ -18,7 +20,19 @@ use winit::{
 
 #[pollster::main]
 async fn main() {
-    env_logger::init();
+    let subscriber = FmtSubscriber::builder()
+        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(Level::TRACE)
+        .with_file(false)
+        .with_line_number(false)
+        .without_time()
+        // completes the builder.
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
+
     ffmpeg::init().unwrap();
     let path_arg = std::env::args()
         .nth(1)

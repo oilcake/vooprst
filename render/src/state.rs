@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use crate::yuv::{Plane, YUV};
+use crate::pipeline::Pipeline;
 
 use crate::vertex::{INDICES, VERTICES, Vertex};
 use crossbeam_channel::Receiver;
-use ffmpeg_next::codec::debug;
 use ffmpeg_next::util::frame::Video;
-use log::{debug, info};
+use tracing::{debug, info, error};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{KeyEvent, WindowEvent},
@@ -21,7 +23,8 @@ pub struct State<'a> {
     pub size: winit::dpi::PhysicalSize<u32>,
     window: &'a Window,
     texture_bind_group: wgpu::BindGroup,
-    render_pipeline: crate::pipeline::Pipeline,
+    render_pipelines: HashMap<usize, Pipeline>,
+    current_pipeline: usize,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
@@ -88,7 +91,7 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        // 1×1 текстуры для старта (R8Unorm)
+        // 1×1 default texture to init with (R8Unorm)
         let y_size = wgpu::Extent3d {
             width: 1,
             height: 1,
@@ -222,8 +225,12 @@ impl<'a> State<'a> {
         });
 
         let pixel_format = ffmpeg_next::format::Pixel::YUV420P;
+
         let render_pipeline =
             crate::pipeline::Pipeline::new(&device, pixel_format, &config, &tex_layout);
+
+        let mut render_pipelines = HashMap::new();
+        render_pipelines.insert(pixel_format as usize, render_pipeline);
 
         // vertex / index buffers
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -249,7 +256,8 @@ impl<'a> State<'a> {
             size,
             window,
             texture_bind_group,
-            render_pipeline,
+            render_pipelines,
+            current_pipeline: pixel_format as usize,
             vertex_buffer,
             index_buffer,
             num_indices: INDICES.len() as u32,
@@ -314,8 +322,9 @@ impl<'a> State<'a> {
             ..Default::default()
         });
 
+        let render_pipeline = self.render_pipelines.get(&self.current_pipeline).unwrap();
         // layout тот же, что в new(), переиспользуй его, если сохранил; здесь — коротко:
-        let tex_layout = self.render_pipeline.inner.get_bind_group_layout(0); // можно так, раз layout в pipeline[0]
+        let tex_layout = render_pipeline.inner.get_bind_group_layout(0); // можно так, раз layout в pipeline[0]
 
         self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &tex_layout,
@@ -348,7 +357,7 @@ impl<'a> State<'a> {
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        log::info!("resize({}x{})", new_size.width, new_size.height);
+        info!("resize({}x{})", new_size.width, new_size.height);
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -371,17 +380,17 @@ impl<'a> State<'a> {
                     },
                 ..
             } => {
-                log::info!("Key pressed: {:?}", physical_key);
+                info!("Key pressed: {:?}", physical_key);
                 match physical_key {
                     PhysicalKey::Code(KeyCode::F11) => {
-                        log::info!("F11 key detected, toggling fullscreen");
+                        info!("F11 key detected, toggling fullscreen");
                         self.toggle_fullscreen();
                         true
                     }
                     PhysicalKey::Code(KeyCode::Escape) => {
-                        log::info!("Escape key detected");
+                        info!("Escape key detected");
                         if self.is_fullscreen {
-                            log::info!("Exiting fullscreen via Escape");
+                            info!("Exiting fullscreen via Escape");
                             self.exit_fullscreen();
                             true
                         } else {
@@ -389,12 +398,12 @@ impl<'a> State<'a> {
                         }
                     }
                     PhysicalKey::Code(KeyCode::KeyF) => {
-                        log::info!("F key detected, toggling fullscreen");
+                        info!("F key detected, toggling fullscreen");
                         self.toggle_fullscreen();
                         true
                     }
                     PhysicalKey::Code(KeyCode::Space) => {
-                        log::info!("Space key detected, toggling fullscreen");
+                        info!("Space key detected, toggling fullscreen");
                         self.toggle_fullscreen();
                         true
                     }
@@ -417,14 +426,14 @@ impl<'a> State<'a> {
             self.window.set_fullscreen(None);
         }
 
-        log::info!("Fullscreen toggled: {}", self.is_fullscreen);
+        info!("Fullscreen toggled: {}", self.is_fullscreen);
     }
 
     pub fn exit_fullscreen(&mut self) {
         if self.is_fullscreen {
             self.is_fullscreen = false;
             self.window.set_fullscreen(None);
-            log::info!("Exited fullscreen mode");
+            info!("Exited fullscreen mode");
         }
     }
 
@@ -473,7 +482,7 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        log::debug!(
+        debug!(
             "Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})",
             self.video_aspect_ratio,
             window_aspect_ratio,
@@ -504,7 +513,7 @@ impl<'a> State<'a> {
             _ => {
                 // На первом шаге поддерживаем только 420p.
                 // Тут можно: (а) вернуть рано, (б) залогировать, (в) временно игнорировать.
-                log::error!(
+                error!(
                     "Unsupported pixel format: {:?}. Expected YUV420P (8-bit).",
                     fmt
                 );
@@ -646,7 +655,8 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            rpass.set_pipeline(&self.render_pipeline.inner);
+            let render_pipeline = &self.render_pipelines.get(&self.current_pipeline).unwrap();
+            rpass.set_pipeline(&render_pipeline.inner);
             rpass.set_bind_group(0, &self.texture_bind_group, &[]);
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -724,10 +734,10 @@ fn copy_plane_16bit(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
     src: &[u8],
-    stride: u32,     // байт на строку в исходных данных
-    w: u32,          // ширина текстуры в пикселях
-    h: u32,          // высота текстуры в пикселях
-    row_bytes: u32,  // ожидаемая длина строки в байтах (w * 2)
+    stride: u32,    // байт на строку в исходных данных
+    w: u32,         // ширина текстуры в пикселях
+    h: u32,         // высота текстуры в пикселях
+    row_bytes: u32, // ожидаемая длина строки в байтах (w * 2)
 ) {
     if stride == row_bytes {
         // Прямая загрузка если stride совпадает
@@ -784,7 +794,7 @@ fn copy_plane_16bit(
 
 fn convert_10bit_to_16unorm(src: &[u8], width: u32, height: u32, stride: u32) -> Vec<u8> {
     let mut result = Vec::with_capacity((width * height * 2) as usize);
-    
+
     for y in 0..height {
         let row_start = (y * stride) as usize;
         for x in 0..width {
@@ -798,6 +808,6 @@ fn convert_10bit_to_16unorm(src: &[u8], width: u32, height: u32, stride: u32) ->
             }
         }
     }
-    
+
     result
 }

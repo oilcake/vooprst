@@ -18,7 +18,7 @@ impl Pipeline {
         // shader & pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("yuv to rgba scaler"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline_layout"),

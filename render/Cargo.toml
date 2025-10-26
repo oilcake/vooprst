@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 bytemuck  = { version = "1.15", features = ["derive"] }
 
-log.workspace = true
+tracing.workspace = true
 crossbeam-channel.workspace = true
 wgpu.workspace = true
 winit.workspace = true
