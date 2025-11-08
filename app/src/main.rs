@@ -11,7 +11,7 @@ use ffmpeg_next as ffmpeg;
 use ffmpeg_next::util::frame::Video;
 use std::path::PathBuf;
 use tracing_subscriber::FmtSubscriber;
-use tracing::{info, Level};
+use tracing::Level;
 use winit::{
     event::Event,
     event_loop::EventLoop,
@@ -26,6 +26,7 @@ async fn main() {
         .with_max_level(Level::TRACE)
         .with_file(false)
         .with_line_number(false)
+        .with_target(false)
         .without_time()
         // completes the builder.
         .finish();
@@ -76,7 +77,7 @@ async fn main() {
         Event::WindowEvent {
             ref event,
             window_id,
-        } if window_id == app.state.window().id() => {
+        } if window_id == app.state.window.id() => {
             app.handle_window_event(event, control_flow);
         }
         _ => {}

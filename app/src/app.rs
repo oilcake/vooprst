@@ -1,12 +1,14 @@
-use render::state::State;
 use clip::decoder::DecoderCommand;
-use tracing::{debug, info, warn, error};
+use render::state::State;
 use std::time::{Duration, Instant};
+use tracing::{debug, error, info, warn};
 use winit::{
     event::*,
     event_loop::EventLoopWindowTarget,
     keyboard::{KeyCode, PhysicalKey},
 };
+
+const CURSOR_HIDE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// App manages the application state and coordinates between different components
 pub struct App {
@@ -60,7 +62,7 @@ impl App {
         );
 
         // Request initial redraw
-        state.window().request_redraw();
+        state.window.request_redraw();
 
         Self {
             state,
@@ -73,12 +75,16 @@ impl App {
 
     /// Handle left arrow press - load previous file
     fn on_left_arrow(&mut self) {
-        self.decoder_commander.send(Some(DecoderCommand::PreviousFile)).unwrap();
+        self.decoder_commander
+            .send(Some(DecoderCommand::PreviousFile))
+            .unwrap();
     }
 
     /// Handle right arrow press - load next file
     fn on_right_arrow(&mut self) {
-        self.decoder_commander.send(Some(DecoderCommand::NextFile)).unwrap();
+        self.decoder_commander
+            .send(Some(DecoderCommand::NextFile))
+            .unwrap();
     }
 
     /// Handle window events
@@ -131,7 +137,7 @@ impl App {
             match event {
                 WindowEvent::CloseRequested => elwt.exit(),
                 WindowEvent::Resized(physical_size) => {
-                    self.state.resize(*physical_size);
+                    self.state.resize_window(*physical_size);
                 }
                 WindowEvent::RedrawRequested => {
                     self.handle_redraw_request(elwt);
@@ -154,22 +160,20 @@ impl App {
 
     /// Show the cursor
     fn show_cursor(&mut self) {
-        self.state.window().set_cursor_visible(true);
+        self.state.window.set_cursor_visible(true);
         self.cursor_hidden = false;
         debug!("Cursor shown");
     }
 
     /// Hide the cursor
     fn hide_cursor(&mut self) {
-        self.state.window().set_cursor_visible(false);
+        self.state.window.set_cursor_visible(false);
         self.cursor_hidden = true;
         debug!("Cursor hidden");
     }
 
     /// Check if cursor should be hidden based on inactivity
     fn update_cursor_visibility(&mut self) {
-        const CURSOR_HIDE_TIMEOUT: Duration = Duration::from_secs(1);
-
         if !self.cursor_hidden && self.last_mouse_activity.elapsed() >= CURSOR_HIDE_TIMEOUT {
             self.hide_cursor();
         }
@@ -181,7 +185,6 @@ impl App {
             // Update cursor visibility based on mouse inactivity
             self.update_cursor_visibility();
 
-
             // Update rendering state with new frame
             self.state.update_texture_with_new_frame();
 
@@ -192,7 +195,7 @@ impl App {
         }
 
         // Request next frame
-        self.state.window().request_redraw();
+        self.state.window.request_redraw();
     }
 
     /// Handle rendering errors
@@ -200,7 +203,7 @@ impl App {
         match error {
             // Reconfigure the surface if it's lost or outdated
             wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
-                self.state.resize(self.state.size);
+                self.state.resize_window(self.state.size);
             }
             // The system is out of memory, we should quit
             wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other => {
