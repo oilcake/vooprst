@@ -1,5 +1,5 @@
-@group(0) @binding(0) var samp: sampler;
-@group(0) @binding(1) var tex: texture_2d<f32>;
+@group(0) @binding(0) var tex: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
 
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
@@ -17,5 +17,6 @@ fn vs_main(@location(0) in_pos: vec2<f32>,
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
+    // Просто сэмплируем текстуру и выводим как есть
     return textureSample(tex, samp, in.uv);
 }

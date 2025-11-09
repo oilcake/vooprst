@@ -1,6 +1,3 @@
-use ffmpeg_next as ffmpeg;
-use ffmpeg::{format::Pixel};
-
 use crate::vertex::Vertex;
 
 pub struct Pipeline {
@@ -11,42 +8,51 @@ impl Pipeline {
     pub fn new(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
-        tex_layout: &wgpu::BindGroupLayout,
+        bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        // shader & pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Simple Display Shader"),
+            label: Some("Display Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/display.wgsl").into()),
         });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("pipeline_layout"),
-            bind_group_layouts: &[&tex_layout],
+            label: Some("render_pipeline_layout"),
+            bind_group_layouts: &[bind_group_layout],
             push_constant_ranges: &[],
         });
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("texture_pipeline"),
+            label: Some("render_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: Some("vs_main"), // ← now Option<&str>
+                entry_point: Some("vs_main"),
                 buffers: &[Vertex::layout()],
-                compilation_options: Default::default(), // ← new field
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_main"), // ← now Option<&str>
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: Default::default(), // ← new field
+                compilation_options: Default::default(),
             }),
-            primitive: wgpu::PrimitiveState::default(),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
-            cache: None, // ← new field
+            cache: None,
         });
 
         Self {

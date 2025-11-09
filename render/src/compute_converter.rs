@@ -1,3 +1,13 @@
+use wgpu::util::DeviceExt;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ConverterParams {
+    pub format: u32,  // 0=YUV420P
+    pub width: u32,
+    pub height: u32,
+}
+
 pub struct ComputeConverter {
     pub pipeline: wgpu::ComputePipeline,
     pub bind_group_layout: wgpu::BindGroupLayout,
@@ -70,17 +80,4 @@ impl ComputeConverter {
             bind_group_layout,
         }
     }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ConverterParams {
-    pub format: u32,      // 0=YUV420P, 1=YUV422P, 2=NV12, 3=RGB, etc.
-    pub width: u32,
-    pub height: u32,
-    pub stride_y: u32,
-    pub stride_u: u32,
-    pub stride_v: u32,
-    pub bit_depth: u32,   // 8, 10, 12, 16
-    pub color_matrix: u32, // 0=BT709, 1=BT601, 2=BT2020
 }
