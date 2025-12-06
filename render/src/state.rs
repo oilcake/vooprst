@@ -1,11 +1,12 @@
 use crate::{
     compute_converter::{ComputeConverter, ConverterParams},
+    frame::Frame,
     pipeline::Pipeline,
     vertex::{INDICES, VERTICES, Vertex},
 };
 use crossbeam_channel::Receiver;
 use ffmpeg_next::util::frame::Video;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{KeyEvent, WindowEvent},
@@ -21,19 +22,12 @@ pub struct State<'a> {
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: &'a Window,
-    // texture_bind_group: wgpu::BindGroup,
-    // render_pipelines: HashMap<usize, Pipeline>,
-    // current_pipeline: usize,
     vertex_buffer: wgpu::Buffer,
-    // index_buffer: wgpu::Buffer,
-    // num_indices: u32,
-    // yuv_texture: YUV,
     frame_buffer: Receiver<Video>,
     is_fullscreen: bool,
-    video_aspect_ratio: f32,
+    current_aspect_ratio: f32,
     compute_converter: ComputeConverter,
     converter_bind_group: Option<wgpu::BindGroup>,
-    universal_texture: Option<wgpu::Texture>, // Текстура в RGBA16Float
     params_buffer: wgpu::Buffer,
 
     render_pipeline: Pipeline,
@@ -42,8 +36,7 @@ pub struct State<'a> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
 
-    video_width: u32, // Добавляем эти два поля
-    video_height: u32,
+    frame: Frame,
 }
 
 impl<'a> State<'a> {
@@ -103,143 +96,10 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        // 1×1 default texture to init with (R8Unorm)
-        // let y_size = wgpu::Extent3d {
-        //     width: 1,
-        //     height: 1,
-        //     depth_or_array_layers: 1,
-        // };
-        // let u_size = y_size;
-        // let v_size = y_size;
-        //
-        // let y_texture = device.create_texture(&wgpu::TextureDescriptor {
-        //     size: y_size,
-        //     mip_level_count: 1,
-        //     sample_count: 1,
-        //     dimension: wgpu::TextureDimension::D2,
-        //     format: wgpu::TextureFormat::R8Unorm,
-        //     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        //     label: Some("texY"),
-        //     view_formats: &[],
-        // });
-        // let u_texture = device.create_texture(&wgpu::TextureDescriptor {
-        //     size: u_size,
-        //     mip_level_count: 1,
-        //     sample_count: 1,
-        //     dimension: wgpu::TextureDimension::D2,
-        //     format: wgpu::TextureFormat::R8Unorm,
-        //     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        //     label: Some("texU"),
-        //     view_formats: &[],
-        // });
-        // let v_texture = device.create_texture(&wgpu::TextureDescriptor {
-        //     size: v_size,
-        //     mip_level_count: 1,
-        //     sample_count: 1,
-        //     dimension: wgpu::TextureDimension::D2,
-        //     format: wgpu::TextureFormat::R8Unorm,
-        //     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        //     label: Some("texV"),
-        //     view_formats: &[],
-        // });
-        //
-        // let yuv_texture = YUV {
-        //     y: Plane {
-        //         texture: y_texture,
-        //         size: y_size,
-        //     },
-        //     u: Plane {
-        //         texture: u_texture,
-        //         size: u_size,
-        //     },
-        //     v: Plane {
-        //         texture: v_texture,
-        //         size: v_size,
-        //     },
-        //     format: wgpu::TextureFormat::R8Unorm,
-        // };
-        //
-        // let y_view = yuv_texture.y.texture.create_view(&Default::default());
-        // let u_view = yuv_texture.u.texture.create_view(&Default::default());
-        // let v_view = yuv_texture.v.texture.create_view(&Default::default());
-        //
-        // let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
-        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
-        //     mag_filter: wgpu::FilterMode::Linear,
-        //     min_filter: wgpu::FilterMode::Linear,
-        //     ..Default::default()
-        // });
-        //
-        // // !!! Новый layout: 1 sampler + 3 текстуры
-        // let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        //     entries: &[
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 0,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-        //             count: None,
-        //         },
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 1,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Texture {
-        //                 multisampled: false,
-        //                 view_dimension: wgpu::TextureViewDimension::D2,
-        //                 sample_type: wgpu::TextureSampleType::Float { filterable: true }, // R8Unorm
-        //             },
-        //             count: None,
-        //         },
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 2,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Texture {
-        //                 multisampled: false,
-        //                 view_dimension: wgpu::TextureViewDimension::D2,
-        //                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
-        //             },
-        //             count: None,
-        //         },
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 3,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Texture {
-        //                 multisampled: false,
-        //                 view_dimension: wgpu::TextureViewDimension::D2,
-        //                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
-        //             },
-        //             count: None,
-        //         },
-        //     ],
-        //     label: Some("yuv_bind_group_layout"),
-        // });
-        // let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        //     layout: &tex_layout,
-        //     entries: &[
-        //         wgpu::BindGroupEntry {
-        //             binding: 0,
-        //             resource: wgpu::BindingResource::Sampler(&sampler),
-        //         },
-        //         wgpu::BindGroupEntry {
-        //             binding: 1,
-        //             resource: wgpu::BindingResource::TextureView(&y_view),
-        //         },
-        //         wgpu::BindGroupEntry {
-        //             binding: 2,
-        //             resource: wgpu::BindingResource::TextureView(&u_view),
-        //         },
-        //         wgpu::BindGroupEntry {
-        //             binding: 3,
-        //             resource: wgpu::BindingResource::TextureView(&v_view),
-        //         },
-        //     ],
-        //     label: Some("yuv_bind_group"),
-        // });
-        //
-        // Создаем compute конвертер
+        // Compute converter
         let compute_converter = ComputeConverter::new(&device);
 
-        // Создаем буфер для параметров
+        // Params buffer
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("converter_params_buffer"),
             size: std::mem::size_of::<ConverterParams>() as u64,
@@ -247,34 +107,17 @@ impl<'a> State<'a> {
             mapped_at_creation: false,
         });
 
-        // Универсальная текстура будет создаваться при получении первого кадра
-        let universal_texture = None;
         let converter_bind_group = None;
-        //
-        // let pixel_format = ffmpeg_next::format::Pixel::YUV420P;
-        //
-        // let render_pipeline =
-        //     crate::pipeline::Pipeline::new(&device, &config, &tex_layout);
-        //
-        // let mut render_pipelines = HashMap::new();
-        // render_pipelines.insert(pixel_format as usize, render_pipeline);
-        //
-        // // vertex / index buffers
+        // vertex / index buffers
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex_buffer"),
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        // let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //     label: Some("index_buffer"),
-        //     contents: bytemuck::cast_slice(INDICES),
-        //     usage: wgpu::BufferUsages::INDEX,
-        // });
-        //
         let display_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
-                    // Текстура для отображения
+                    // Texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -285,7 +128,7 @@ impl<'a> State<'a> {
                         },
                         count: None,
                     },
-                    // Сэмплер
+                    // Sampler
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -296,10 +139,10 @@ impl<'a> State<'a> {
                 label: Some("display_bind_group_layout"),
             });
 
-        // Создаем рендер пайплайн
+        // Render pipeline
         let render_pipeline = Pipeline::new(&device, &config, &display_bind_group_layout);
 
-        // Создаем index buffer
+        // index buffer
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("index_buffer"),
             contents: bytemuck::cast_slice(INDICES),
@@ -311,7 +154,6 @@ impl<'a> State<'a> {
         // (‼️) configure the surface once up‑front
         surface.configure(&device, &config);
 
-        // final return
         Self {
             surface,
             device,
@@ -319,19 +161,12 @@ impl<'a> State<'a> {
             config,
             size,
             window,
-            // texture_bind_group,
-            // render_pipelines,
-            // current_pipeline: pixel_format as usize,
             vertex_buffer,
-            // index_buffer,
-            // num_indices: INDICES.len() as u32,
-            // yuv_texture,
             is_fullscreen: false,
-            video_aspect_ratio: 1.0,
+            current_aspect_ratio: 1.0,
             frame_buffer,
             compute_converter,
             converter_bind_group,
-            universal_texture,
             params_buffer,
 
             render_pipeline,
@@ -340,8 +175,7 @@ impl<'a> State<'a> {
             index_buffer,
             num_indices,
 
-            video_width: 0,
-            video_height: 0,
+            frame: Frame::default(),
         }
     }
 
@@ -428,18 +262,18 @@ impl<'a> State<'a> {
 
     /// Update vertex buffer to maintain video aspect ratio
     fn update_vertex_buffer_for_aspect_ratio(&mut self) {
-        if self.video_aspect_ratio <= 0.0 {
+        if self.current_aspect_ratio <= 0.0 {
             return; // Skip if we don't have valid video dimensions yet
         }
 
         let window_aspect_ratio = self.size.width as f32 / self.size.height as f32;
 
-        let (scale_x, scale_y) = if self.video_aspect_ratio > window_aspect_ratio {
+        let (scale_x, scale_y) = if self.current_aspect_ratio > window_aspect_ratio {
             // Video is wider than window - fit to width, letterbox top/bottom
-            (1.0, window_aspect_ratio / self.video_aspect_ratio)
+            (1.0, window_aspect_ratio / self.current_aspect_ratio)
         } else {
             // Video is taller than window - fit to height, pillarbox left/right
-            (self.video_aspect_ratio / window_aspect_ratio, 1.0)
+            (self.current_aspect_ratio / window_aspect_ratio, 1.0)
         };
 
         // Create new vertices with aspect ratio correction
@@ -473,7 +307,7 @@ impl<'a> State<'a> {
 
         debug!(
             "Updated vertex buffer for aspect ratio: video={:.3}, window={:.3}, scale=({:.3}, {:.3})",
-            self.video_aspect_ratio, window_aspect_ratio, scale_x, scale_y
+            self.current_aspect_ratio, window_aspect_ratio, scale_x, scale_y
         );
     }
 
@@ -488,33 +322,31 @@ impl<'a> State<'a> {
 
         let width = frame.width() as u32;
         let height = frame.height() as u32;
-        
-        // ВЫЗЫВАЕМ ОБНОВЛЕНИЕ ASPECT RATIO ПЕРЕД ВСЕМ ОСТАЛЬНЫМ
-        if self.video_aspect_ratio <= 0.0 || self.video_width != width || self.video_height != height {
-            self.video_width = width;
-            self.video_height = height;
-            self.video_aspect_ratio = width as f32 / height as f32;
-            self.update_vertex_buffer_for_aspect_ratio(); // ← ДОБАВИТЬ ЭТУ СТРОЧКУ
+
+        // Refresh video aspect ratio first
+        if self.current_aspect_ratio <= 0.0
+            || self.frame.video_width != width
+            || self.frame.video_height != height
+        {
+            self.frame.video_width = width;
+            self.frame.video_height = height;
+            self.current_aspect_ratio = width as f32 / height as f32;
+            self.update_vertex_buffer_for_aspect_ratio();
         }
 
-        // Создаем текстуру для вывода если ее нет
-        if self.universal_texture.is_none() {
+        if self.frame.universal_texture.is_none() {
             self.recreate_universal_texture(width, height);
         }
 
-        // Создаем входную текстуру для Y-plane
+        // Currntly we only work with Y-plane
         let input_texture = self.create_y_plane_texture(&frame);
 
-        // Загружаем Y-plane данные
         self.upload_y_plane_data(&frame, &input_texture);
 
-        // Настраиваем bind group
         self.setup_converter_bind_group(&input_texture);
 
-        // Обновляем параметры
         self.update_converter_params(width, height);
 
-        // Запускаем compute шейдер
         self.run_converter(width, height);
 
         debug!("Successfully processed YUV420P frame: {}x{}", width, height);
@@ -536,7 +368,7 @@ impl<'a> State<'a> {
             view_formats: &[],
         });
 
-        self.universal_texture = Some(texture);
+        self.frame.universal_texture = Some(texture);
         debug!("Created universal texture: {}x{}", width, height);
     }
 
@@ -564,9 +396,8 @@ impl<'a> State<'a> {
         let width = frame.width() as u32;
         let height = frame.height() as u32;
         let y_data = frame.data(0);
-        let stride = frame.stride(0) as u32;
 
-        let expected_row_bytes = width; // R8Unorm = 1 байт на пиксель
+        let expected_row_bytes = width; // R8Unorm = 1 byte per pixel
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -594,7 +425,7 @@ impl<'a> State<'a> {
     fn setup_converter_bind_group(&mut self, input_texture: &wgpu::Texture) {
         let input_view = input_texture.create_view(&Default::default());
         let universal_view = self
-            .universal_texture
+            .frame.universal_texture
             .as_ref()
             .unwrap()
             .create_view(&Default::default());
@@ -623,14 +454,13 @@ impl<'a> State<'a> {
                 label: Some("converter_bind_group"),
             }));
 
-        // Теперь создаем и display_bind_group
         self.setup_display_bind_group();
 
         debug!("Setup converter and display bind groups");
     }
 
     fn setup_display_bind_group(&mut self) {
-        if let Some(universal_texture) = &self.universal_texture {
+        if let Some(universal_texture) = &self.frame.universal_texture {
             let universal_view = universal_texture.create_view(&Default::default());
 
             let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -661,7 +491,6 @@ impl<'a> State<'a> {
         }
     }
 
-    // Обновляем метод render чтобы реально рендерить
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let frame = self.surface.get_current_texture()?;
         let view = frame.texture.create_view(&Default::default());
@@ -688,7 +517,7 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            // Рендерим только если есть что показывать
+            // render if we have a display bind group to group
             if let Some(display_bind_group) = &self.display_bind_group {
                 rpass.set_pipeline(&self.render_pipeline.inner);
                 rpass.set_bind_group(0, display_bind_group, &[]);
