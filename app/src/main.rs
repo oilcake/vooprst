@@ -10,7 +10,7 @@ use crossbeam_channel::{bounded, unbounded};
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::util::frame::Video;
 use std::path::PathBuf;
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{FmtSubscriber, EnvFilter};
 use tracing::Level;
 use winit::{
     event::Event,
@@ -24,6 +24,7 @@ async fn main() {
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
         .with_max_level(Level::TRACE)
+        .with_env_filter(EnvFilter::from_default_env())
         .with_file(false)
         .with_line_number(false)
         .with_target(false)
