@@ -1,6 +1,5 @@
 use crate::{
     compute_converter::{ComputeConverter, ConverterParams},
-    frame::Frame,
     pipeline::Pipeline,
     vertex::{INDICES, VERTICES, Vertex},
 };
@@ -36,7 +35,9 @@ pub struct State<'a> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
 
-    frame: Frame,
+    pub universal_texture: Option<wgpu::Texture>,
+    pub video_width: u32,
+    pub video_height: u32,
 }
 
 impl<'a> State<'a> {
@@ -175,7 +176,9 @@ impl<'a> State<'a> {
             index_buffer,
             num_indices,
 
-            frame: Frame::default(),
+            universal_texture: None,
+            video_width: 0,
+            video_height: 0,
         }
     }
 
@@ -325,16 +328,16 @@ impl<'a> State<'a> {
 
         // Refresh video aspect ratio first
         if self.current_aspect_ratio <= 0.0
-            || self.frame.video_width != width
-            || self.frame.video_height != height
+            || self.video_width != width
+            || self.video_height != height
         {
-            self.frame.video_width = width;
-            self.frame.video_height = height;
+            self.video_width = width;
+            self.video_height = height;
             self.current_aspect_ratio = width as f32 / height as f32;
             self.update_vertex_buffer_for_aspect_ratio();
         }
 
-        if self.frame.universal_texture.is_none() {
+        if self.universal_texture.is_none() {
             self.recreate_universal_texture(width, height);
         }
 
@@ -368,7 +371,7 @@ impl<'a> State<'a> {
             view_formats: &[],
         });
 
-        self.frame.universal_texture = Some(texture);
+        self.universal_texture = Some(texture);
         debug!("Created universal texture: {}x{}", width, height);
     }
 
@@ -425,7 +428,7 @@ impl<'a> State<'a> {
     fn setup_converter_bind_group(&mut self, input_texture: &wgpu::Texture) {
         let input_view = input_texture.create_view(&Default::default());
         let universal_view = self
-            .frame.universal_texture
+            .universal_texture
             .as_ref()
             .unwrap()
             .create_view(&Default::default());
@@ -460,7 +463,7 @@ impl<'a> State<'a> {
     }
 
     fn setup_display_bind_group(&mut self) {
-        if let Some(universal_texture) = &self.frame.universal_texture {
+        if let Some(universal_texture) = &self.universal_texture {
             let universal_view = universal_texture.create_view(&Default::default());
 
             let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
