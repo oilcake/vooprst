@@ -266,7 +266,8 @@ impl<'a> State<'a> {
     /// Update vertex buffer to maintain video aspect ratio
     fn update_vertex_buffer_for_aspect_ratio(&mut self) {
         if self.current_aspect_ratio <= 0.0 {
-            return; // Skip if we don't have valid video dimensions yet
+            panic!("Invalid aspect ratio"); // this check looks like bullshit so let's see if it is
+            // ever helpful
         }
 
         let window_aspect_ratio = self.size.width as f32 / self.size.height as f32;
