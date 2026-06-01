@@ -1,0 +1,46 @@
+{
+  "enabled": true,
+  "allowBrowserProcess": true,
+  "network": {
+    "allowLocalBinding": true,
+    "allowAllUnixSockets": true,
+    "allowedDomains": [
+      "github.com",
+      "*.github.com",
+      "crates.io",
+      "*.crates.io"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "denyRead": ["/Users", "/home"],
+    "allowRead": [
+      ".",
+      "/Users/oilcake/.config",
+      "Library",
+      "/Users/oilcake/.cargo/",
+      "/Users/oilcake/.rustup/",
+      "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/",
+      "/Users/oilcake/.pi/agent/",
+      "/Users/oilcake/local/",
+      "/Users/oilcake/code/voop/rust-ffmpeg-sys/"
+    ],
+
+    "allowWrite": [
+      ".",
+      "/tmp",
+      "/Users/oilcake/.cargo/registry",
+      "/private/tmp",
+      "/Users/oilcake/code/voop/rust-ffmpeg-sys/"
+    ],
+    "denyWrite": [
+      ".env",
+      ".env.*",
+      "*.pem",
+      "*.key",
+      "/Users/oilcake/.cargo/config.toml",
+      "/Users/oilcake/.cargo/credentials.toml"
+    ]
+  }
+}
+
