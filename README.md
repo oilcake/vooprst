@@ -2,7 +2,7 @@
 
 Meant to be an easy video installation tool for touring bands or experimenting artists.
 
-The project is in **really** early stages of development. The basic idea is "Ableto Link enabled video looper", so something like Ableton Live but for video. For now it is only able to load a folder of videos and play them acoorgingly to Link synchronization signals, but without any possibilities to customize behavior and very dumb in terms of UI and actual video playback.
+The project is in **really** early stages of development. The basic idea is "Ableton Link enabled video looper", so something like Ableton Live but for video. For now it is only able to load a folder of videos and play them accordingly to Link synchronisation signals, but without any possibilities to customise behaviour and very dumb in terms of UI and actual video playback.
 
 So, stay with us, it may do something useful later :)
 
