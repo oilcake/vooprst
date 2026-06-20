@@ -39,6 +39,24 @@ Video player synced to Ableton Link tempo grid.
 - File switching: `ArrowLeft`/`ArrowRight` send `DecoderCommand` via unbounded channel
 - `Clip` decodes all frames into `Vec<Video>` on load (naive, RAM-heavy)
 
+## Design philosophy
+
+This is **not** a conventional video player. Conventional players sync to wall-clock time or
+vsync — this program syncs to **musical time** via Ableton Link. The Link session's
+beat/phase IS the video timeline. Every frame shown on screen corresponds to a specific
+musical position, not a specific wall-clock instant.
+
+- `Link.phase ∈ [0, quantum)` maps directly to `Clip` frame position `[0.0, 1.0)`
+- No vsync-driven frame timing; no real-time clock involved in frame selection
+- Decoder runs as fast as renderer consumes, gated by bounded channel backpressure —
+  not by wall-clock deadlines
+- The Link session can be shared across multiple devices (DAW, synths, another Voop instance)
+  and all will stay in sync on the musical grid
+
+Do not apply conventional video-player assumptions (PTS-based scheduling, frame-drop
+on missed vsync, wall-clock seek) to this codebase. The musical timeline is the
+single source of truth.
+
 ## Current limitations
 
 - Only YUV420P pixel format supported
