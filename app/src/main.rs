@@ -10,8 +10,8 @@ use crossbeam_channel::{bounded, unbounded};
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::util::frame::Video;
 use std::path::PathBuf;
-use tracing_subscriber::{FmtSubscriber, EnvFilter};
 use tracing::Level;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use winit::{
     event::Event,
     event_loop::EventLoop,
@@ -32,8 +32,7 @@ async fn main() {
         // completes the builder.
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default subscriber failed");
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     ffmpeg::init().unwrap();
     let path_arg = std::env::args()
