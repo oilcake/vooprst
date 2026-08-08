@@ -1,58 +1,60 @@
 struct ConverterParams {
-    format: u32,
+    format: u32,  // 0=YUV420P, 1=YUV422P, 2=YUV444P
     width: u32,
     height: u32,
 }
 
-@group(0) @binding(0) var input_texture: texture_2d<f32>;
-@group(0) @binding(1) var output_texture: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(2) var<uniform> params: ConverterParams;
+@group(0) @binding(0) var tex_y: texture_2d<f32>;
+@group(0) @binding(1) var tex_u: texture_2d<f32>;
+@group(0) @binding(2) var tex_v: texture_2d<f32>;
+@group(0) @binding(3) var output_texture: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var<uniform> params: ConverterParams;
 
-// Простая функция конвертации YUV420P в RGB (исправленная)
-fn bt709_yuv_to_rgb(y_val: f32, u_val: f32, v_val: f32) -> vec3<f32> {
-    let y_normalized = y_val - 16.0/255.0;
-    let u_normalized = u_val - 128.0/255.0;
-    let v_normalized = v_val - 128.0/255.0;
-    
-    let r = 1.164 * y_normalized + 1.793 * v_normalized;
-    let g = 1.164 * y_normalized - 0.213 * u_normalized - 0.533 * v_normalized;
-    let b = 1.164 * y_normalized + 2.112 * u_normalized;
+// BT.709 limited-range YCbCr → RGB
+fn yuv_to_rgb(y: f32, cb: f32, cr: f32) -> vec3<f32> {
+    let y_norm  = (y  - 16.0 / 255.0) * 1.16438356;
+    let u_norm  = cb - 128.0 / 255.0;
+    let v_norm  = cr - 128.0 / 255.0;
+
+    let r = y_norm + 1.79274107 * v_norm;
+    let g = y_norm - 0.21324861 * u_norm - 0.53290933 * v_norm;
+    let b = y_norm + 2.11240179 * u_norm;
+
     return vec3<f32>(r, g, b);
 }
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let coord = vec2<i32>(global_id.xy);
-    
-    // Проверяем границы
-    if coord.x >= i32(params.width) || coord.y >= i32(params.height) {
+    let x = i32(global_id.x);
+    let y = i32(global_id.y);
+
+    if x >= i32(params.width) || y >= i32(params.height) {
         return;
     }
-    
-    var color: vec4<f32>;
-    
-    // Пока работаем только с YUV420P
-    if params.format == 0 {
-        // YUV420P: Y-plane наверху, U и V planes ниже
-        let y_coord = coord;
-        
-        // Читаем Y компоненту
-        let y_value = textureLoad(input_texture, y_coord, 0).r;
-        
-        // Для теста: просто делаем grayscale из Y компоненты
-        color = vec4<f32>(y_value, y_value, y_value, 1.0);
-        
-        // TODO: позже добавим U и V плоскости
-        // let uv_coord = coord / 2;
-        // let u_value = textureLoad(input_texture, 
-        //     vec2<i32>(uv_coord.x, uv_coord.y + i32(params.height)), 0).r;
-        // let v_value = textureLoad(input_texture, 
-        //     vec2<i32>(uv_coord.x, uv_coord.y + i32(params.height * 3/2)), 0).r;
-        // color = vec4<f32>(bt709_yuv_to_rgb(y_value, u_value, v_value), 1.0);
-    } else {
-        // Для других форматов - magenta (ошибка)
-        color = vec4<f32>(1.0, 0.0, 1.0, 1.0);
+
+    let y_val = textureLoad(tex_y, vec2<i32>(x, y), 0).r;
+
+    // Chroma subsampling: compute UV coordinate per format
+    var uv_x: i32;
+    var uv_y: i32;
+    switch params.format {
+        case 1u, 3u: {
+            uv_x = x / 2;  // YUV422P / YUV422P10LE: half horizontal
+            uv_y = y;
+        }
+        case 2u: {
+            uv_x = x;     // YUV444P: full res
+            uv_y = y;
+        }
+        default: {
+            uv_x = x / 2;  // YUV420P: half both dims
+            uv_y = y / 2;
+        }
     }
-    
-    textureStore(output_texture, coord, color);
+
+    let u_val = textureLoad(tex_u, vec2<i32>(uv_x, uv_y), 0).r;
+    let v_val = textureLoad(tex_v, vec2<i32>(uv_x, uv_y), 0).r;
+
+    let rgb = yuv_to_rgb(y_val, u_val, v_val);
+    textureStore(output_texture, vec2<i32>(x, y), vec4<f32>(rgb, 1.0));
 }

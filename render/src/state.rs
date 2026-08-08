@@ -1,5 +1,5 @@
 use crate::{
-    compute_converter::{ComputeConverter, ConverterParams},
+    converter::Converter,
     pipeline::Pipeline,
     vertex::{INDICES, VERTICES, Vertex},
 };
@@ -25,9 +25,7 @@ pub struct State<'a> {
     frame_buffer: Receiver<Video>,
     is_fullscreen: bool,
     current_aspect_ratio: f32,
-    compute_converter: ComputeConverter,
-    converter_bind_group: Option<wgpu::BindGroup>,
-    params_buffer: wgpu::Buffer,
+    converter: Converter,
 
     render_pipeline: Pipeline,
     display_bind_group: Option<wgpu::BindGroup>,
@@ -35,7 +33,6 @@ pub struct State<'a> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
 
-    pub universal_texture: Option<wgpu::Texture>,
     pub video_width: u32,
     pub video_height: u32,
 }
@@ -97,18 +94,8 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        // Compute converter
-        let compute_converter = ComputeConverter::new(&device);
+        let converter = Converter::new(&device);
 
-        // Params buffer
-        let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("converter_params_buffer"),
-            size: std::mem::size_of::<ConverterParams>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let converter_bind_group = None;
         // vertex / index buffers
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex_buffer"),
@@ -166,9 +153,7 @@ impl<'a> State<'a> {
             is_fullscreen: false,
             current_aspect_ratio: 1.0,
             frame_buffer,
-            compute_converter,
-            converter_bind_group,
-            params_buffer,
+            converter,
 
             render_pipeline,
             display_bind_group,
@@ -176,7 +161,6 @@ impl<'a> State<'a> {
             index_buffer,
             num_indices,
 
-            universal_texture: None,
             video_width: 0,
             video_height: 0,
         }
@@ -318,16 +302,10 @@ impl<'a> State<'a> {
     pub fn update_texture_with_new_frame(&mut self) {
         let frame = self.frame_buffer.recv().expect("failed to receive frame");
         debug!("{:?}", frame.format());
-        // Пока работаем только с YUV420P
-        if frame.format() != ffmpeg_next::format::Pixel::YUV420P {
-            debug!("Skipping non-YUV420P frame");
-            return;
-        }
 
         let width = frame.width() as u32;
         let height = frame.height() as u32;
 
-        // Refresh video aspect ratio first
         if self.current_aspect_ratio <= 0.0
             || self.video_width != width
             || self.video_height != height
@@ -338,133 +316,14 @@ impl<'a> State<'a> {
             self.update_vertex_buffer_for_aspect_ratio();
         }
 
-        if self.universal_texture.is_none() {
-            self.recreate_universal_texture(width, height);
-        }
-
-        // Currntly we only work with Y-plane
-        let input_texture = self.create_y_plane_texture(&frame);
-
-        self.upload_y_plane_data(&frame, &input_texture);
-
-        self.setup_converter_bind_group(&input_texture);
-
-        self.update_converter_params(width, height);
-
-        self.run_converter(width, height);
-
-        debug!("Successfully processed YUV420P frame: {}x{}", width, height);
-    }
-
-    fn recreate_universal_texture(&mut self, width: u32, height: u32) {
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-            label: Some("universal_texture"),
-            view_formats: &[],
-        });
-
-        self.universal_texture = Some(texture);
-        debug!("Created universal texture: {}x{}", width, height);
-    }
-
-    fn create_y_plane_texture(&self, frame: &Video) -> wgpu::Texture {
-        let width = frame.width() as u32;
-        let height = frame.height() as u32;
-
-        self.device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("y_plane_texture"),
-            view_formats: &[],
-        })
-    }
-
-    fn upload_y_plane_data(&self, frame: &Video, texture: &wgpu::Texture) {
-        let width = frame.width() as u32;
-        let height = frame.height() as u32;
-        let y_data = frame.data(0);
-
-        let expected_row_bytes = width; // R8Unorm = 1 byte per pixel
-
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            y_data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(expected_row_bytes),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        debug!("Uploaded Y-plane data: {} bytes", y_data.len());
-    }
-
-    fn setup_converter_bind_group(&mut self, input_texture: &wgpu::Texture) {
-        let input_view = input_texture.create_view(&Default::default());
-        let universal_view = self
-            .universal_texture
-            .as_ref()
-            .unwrap()
-            .create_view(&Default::default());
-
-        self.converter_bind_group =
-            Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.compute_converter.bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&input_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&universal_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: &self.params_buffer,
-                            offset: 0,
-                            size: None,
-                        }),
-                    },
-                ],
-                label: Some("converter_bind_group"),
-            }));
-
+        self.converter.process_frame(&self.device, &self.queue, &frame);
         self.setup_display_bind_group();
 
-        debug!("Setup converter and display bind groups");
+        debug!("Processed frame: {}x{} {:?}", width, height, frame.format());
     }
 
     fn setup_display_bind_group(&mut self) {
-        if let Some(universal_texture) = &self.universal_texture {
+        if let Some(universal_texture) = self.converter.universal_texture() {
             let universal_view = universal_texture.create_view(&Default::default());
 
             let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -541,40 +400,5 @@ impl<'a> State<'a> {
         Ok(())
     }
 
-    fn update_converter_params(&mut self, width: u32, height: u32) {
-        let params = ConverterParams {
-            format: 0, // YUV420P
-            width,
-            height,
-        };
 
-        self.queue
-            .write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
-
-        debug!("Updated converter params: {}x{}", width, height);
-    }
-
-    fn run_converter(&mut self, width: u32, height: u32) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
-        {
-            let mut compute_pass =
-                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            compute_pass.set_pipeline(&self.compute_converter.pipeline);
-            compute_pass.set_bind_group(0, self.converter_bind_group.as_ref().unwrap(), &[]);
-
-            let workgroups_x = (width + 7) / 8;
-            let workgroups_y = (height + 7) / 8;
-            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
-        }
-
-        self.queue.submit(Some(encoder.finish()));
-        debug!(
-            "Dispatched compute shader: {}x{} workgroups",
-            (width + 7) / 8,
-            (height + 7) / 8
-        );
-    }
 }

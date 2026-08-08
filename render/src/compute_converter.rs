@@ -1,9 +1,7 @@
-use wgpu::util::DeviceExt;
-
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ConverterParams {
-    pub format: u32,  // 0=YUV420P
+    pub format: u32, // 0=YUV420P, 1=YUV422P, 2=YUV444P
     pub width: u32,
     pub height: u32,
 }
@@ -20,10 +18,9 @@ impl ComputeConverter {
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/converter.wgsl").into()),
         });
 
-        // Layout для конвертера: входная текстура + выходная + параметры
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
-                // Входная текстура (любой формат)
+                // Y plane
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -34,9 +31,31 @@ impl ComputeConverter {
                     },
                     count: None,
                 },
-                // Выходная текстура (универсальный формат RGBA16Float)
+                // U plane
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // V plane
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Output texture (RGBA16Float)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
@@ -45,9 +64,9 @@ impl ComputeConverter {
                     },
                     count: None,
                 },
-                // Uniform buffer с параметрами конвертации
+                // Uniform buffer with converter params
                 wgpu::BindGroupLayoutEntry {
-                    binding: 2,
+                    binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
