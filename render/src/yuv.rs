@@ -36,8 +36,6 @@ pub struct Plane {
     pub texture: wgpu::Texture,
     pub width: u32,
     pub height: u32,
-    /// Bytes per pixel in the raw ffmpeg plane data (1 for u8, 2 for u16 LE).
-    component_bytes: usize,
 }
 
 /// Three-plane YUV data on GPU.
@@ -51,13 +49,16 @@ pub struct YuvPlanes {
 
 impl YuvPlanes {
     /// Create GPU textures sized for `frame`'s format.
-    /// Always uses R16Unorm — 8-bit data is expanded to 16-bit during upload.
+    /// 8-bit formats use R8Unorm, >8-bit use R16Unorm — raw upload, no CPU conversion.
+    /// 10-bit data is scaled to full range in the compute shader instead.
     pub fn new(device: &wgpu::Device, frame: &Video, format: YuvFormat) -> Self {
         let (y_w, y_h) = (frame.width(), frame.height());
         let (uv_w, uv_h) = chroma_size(y_w, y_h, format);
-        let comp_bytes = format.component_size();
 
-        let tex_format = wgpu::TextureFormat::R16Unorm;
+        let tex_format = match format.component_size() {
+            1 => wgpu::TextureFormat::R8Unorm,
+            _ => wgpu::TextureFormat::R16Unorm,
+        };
         let usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
 
         let make_plane = |label: &str, w: u32, h: u32| -> Plane {
@@ -74,7 +75,6 @@ impl YuvPlanes {
                 }),
                 width: w,
                 height: h,
-                component_bytes: comp_bytes,
             }
         };
 
@@ -96,11 +96,11 @@ impl YuvPlanes {
     }
 
     /// Upload all three planes from `frame` to GPU.
-    /// Performs 8→16 bit expansion when format is 8-bit.
+    /// Raw passthrough of ffmpeg data; stride handles row padding.
     pub fn upload(&self, queue: &wgpu::Queue, frame: &Video) {
-        upload_plane(queue, &self.y, frame.data(0));
-        upload_plane(queue, &self.u, frame.data(1));
-        upload_plane(queue, &self.v, frame.data(2));
+        upload_plane(queue, &self.y, frame.data(0), frame.stride(0));
+        upload_plane(queue, &self.u, frame.data(1), frame.stride(1));
+        upload_plane(queue, &self.v, frame.data(2), frame.stride(2));
         debug!(
             "Uploaded YUV planes: Y={}x{} U={}x{} V={}x{}",
             self.y.width, self.y.height, self.u.width, self.u.height, self.v.width, self.v.height
@@ -117,26 +117,10 @@ fn chroma_size(luma_w: u32, luma_h: u32, fmt: YuvFormat) -> (u32, u32) {
     }
 }
 
-/// Upload plane data, converting to 16-bit normalized if source is 8-bit.
-fn upload_plane(queue: &wgpu::Queue, plane: &Plane, data: &[u8]) {
-    let pixel_count = (plane.width * plane.height) as usize;
-
-    let u16_data: Vec<u16> = match plane.component_bytes {
-        1 => {
-            // 8-bit: expand to 16-bit by scaling 0..255 → 0..65535
-            data.iter().take(pixel_count).map(|&b| (b as u16) * 257).collect()
-        }
-        2 => {
-            // 10-bit LE: data is u16 pairs. Shift left 6 to fill 16-bit range.
-            bytemuck::cast_slice::<u8, u16>(data)
-                .iter()
-                .take(pixel_count)
-                .map(|&v| v << 6)
-                .collect()
-        }
-        _ => unreachable!(),
-    };
-
+/// Upload plane data as-is. ffmpeg linesize (bytes per row, incl. padding)
+/// is passed as the source layout stride. 10-bit LE u16 pairs map directly
+/// onto R16Unorm texels on little-endian hosts.
+fn upload_plane(queue: &wgpu::Queue, plane: &Plane, data: &[u8], stride: usize) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture: &plane.texture,
@@ -144,10 +128,10 @@ fn upload_plane(queue: &wgpu::Queue, plane: &Plane, data: &[u8]) {
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        bytemuck::cast_slice(&u16_data),
+        data,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(plane.width * 2), // R16Unorm = 2 bytes per pixel
+            bytes_per_row: Some(stride as u32),
             rows_per_image: Some(plane.height),
         },
         wgpu::Extent3d {

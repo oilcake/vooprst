@@ -53,13 +53,13 @@ impl ComputeConverter {
                     },
                     count: None,
                 },
-                // Output texture (RGBA16Float)
+                // Output texture (RGBA8Unorm)
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba16Float,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,

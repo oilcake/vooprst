@@ -3,7 +3,7 @@ use crate::yuv::{YuvFormat, YuvPlanes};
 use ffmpeg_next::util::frame::Video;
 use tracing::debug;
 
-/// Uploads YUV planes → compute-shader → RGBA16Float texture.
+/// Uploads YUV planes → compute-shader → RGBA8 texture.
 /// Owns plane textures, output texture, bind groups, dispatch.
 pub struct Converter {
     compute_converter: ComputeConverter,
@@ -87,7 +87,7 @@ impl Converter {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
             label: Some("universal_texture"),
             view_formats: &[],

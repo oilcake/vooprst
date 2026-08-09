@@ -7,7 +7,7 @@ struct ConverterParams {
 @group(0) @binding(0) var tex_y: texture_2d<f32>;
 @group(0) @binding(1) var tex_u: texture_2d<f32>;
 @group(0) @binding(2) var tex_v: texture_2d<f32>;
-@group(0) @binding(3) var output_texture: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(3) var output_texture: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(4) var<uniform> params: ConverterParams;
 
 // BT.709 limited-range YCbCr → RGB
@@ -34,27 +34,37 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let y_val = textureLoad(tex_y, vec2<i32>(x, y), 0).r;
 
-    // Chroma subsampling: compute UV coordinate per format
+    // Chroma subsampling: compute UV coordinate per format.
+    // scale expands >8-bit samples (stored in low bits of u16) to 0..1.
     var uv_x: i32;
     var uv_y: i32;
+    var scale: f32;
     switch params.format {
-        case 1u, 3u: {
-            uv_x = x / 2;  // YUV422P / YUV422P10LE: half horizontal
+        case 1u: {
+            uv_x = x / 2;  // YUV422P: half horizontal
             uv_y = y;
+            scale = 1.0;
         }
         case 2u: {
             uv_x = x;     // YUV444P: full res
             uv_y = y;
+            scale = 1.0;
+        }
+        case 3u: {
+            uv_x = x / 2;  // YUV422P10LE: half horizontal, 10-bit in u16
+            uv_y = y;
+            scale = 64.0;  // 1023 * 64 ~= 65535
         }
         default: {
             uv_x = x / 2;  // YUV420P: half both dims
             uv_y = y / 2;
+            scale = 1.0;
         }
     }
 
-    let u_val = textureLoad(tex_u, vec2<i32>(uv_x, uv_y), 0).r;
-    let v_val = textureLoad(tex_v, vec2<i32>(uv_x, uv_y), 0).r;
+    let u_val = textureLoad(tex_u, vec2<i32>(uv_x, uv_y), 0).r * scale;
+    let v_val = textureLoad(tex_v, vec2<i32>(uv_x, uv_y), 0).r * scale;
 
-    let rgb = yuv_to_rgb(y_val, u_val, v_val);
+    let rgb = yuv_to_rgb(y_val * scale, u_val, v_val);
     textureStore(output_texture, vec2<i32>(x, y), vec4<f32>(rgb, 1.0));
 }
