@@ -1,7 +1,8 @@
 struct ConverterParams {
-    format: u32,  // 0=YUV420P, 1=YUV422P, 2=YUV444P
+    format: u32,     // 0=YUV420P, 1=YUV422P, 2=YUV444P, 3=YUV422P10LE, 4=YUVA444P12LE, 5=YUV422P12LE
     width: u32,
     height: u32,
+    colorspace: u32, // 0=BT.601, 1=BT.709
 }
 
 @group(0) @binding(0) var tex_y: texture_2d<f32>;
@@ -11,7 +12,7 @@ struct ConverterParams {
 @group(0) @binding(4) var<uniform> params: ConverterParams;
 
 // BT.709 limited-range YCbCr → RGB
-fn yuv_to_rgb(y: f32, cb: f32, cr: f32) -> vec3<f32> {
+fn yuv_to_rgb_709(y: f32, cb: f32, cr: f32) -> vec3<f32> {
     let y_norm  = (y  - 16.0 / 255.0) * 1.16438356;
     let u_norm  = cb - 128.0 / 255.0;
     let v_norm  = cr - 128.0 / 255.0;
@@ -19,6 +20,19 @@ fn yuv_to_rgb(y: f32, cb: f32, cr: f32) -> vec3<f32> {
     let r = y_norm + 1.79274107 * v_norm;
     let g = y_norm - 0.21324861 * u_norm - 0.53290933 * v_norm;
     let b = y_norm + 2.11240179 * u_norm;
+
+    return vec3<f32>(r, g, b);
+}
+
+// BT.601 limited-range YCbCr → RGB
+fn yuv_to_rgb_601(y: f32, cb: f32, cr: f32) -> vec3<f32> {
+    let y_norm  = (y  - 16.0 / 255.0) * 1.16438356;
+    let u_norm  = cb - 128.0 / 255.0;
+    let v_norm  = cr - 128.0 / 255.0;
+
+    let r = y_norm + 1.5958 * v_norm;
+    let g = y_norm - 0.39173 * u_norm - 0.81290 * v_norm;
+    let b = y_norm + 2.0170 * u_norm;
 
     return vec3<f32>(r, g, b);
 }
@@ -31,8 +45,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if x >= i32(params.width) || y >= i32(params.height) {
         return;
     }
-
-    let y_val = textureLoad(tex_y, vec2<i32>(x, y), 0).r;
 
     // Chroma subsampling: compute UV coordinate per format.
     // scale expands >8-bit samples (stored in low bits of u16) to 0..1.
@@ -55,6 +67,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             uv_y = y;
             scale = 64.0;  // 1023 * 64 ~= 65535
         }
+        case 4u: {
+            uv_x = x;      // YUVA444P12LE: full res, 12-bit in u16 (alpha ignored)
+            uv_y = y;
+            scale = 16.0;  // 4095 * 16 ~= 65535
+        }
+        case 5u: {
+            uv_x = x / 2;  // YUV422P12LE: half horizontal, 12-bit in u16
+            uv_y = y;
+            scale = 16.0;  // 4095 * 16 ~= 65535
+        }
         default: {
             uv_x = x / 2;  // YUV420P: half both dims
             uv_y = y / 2;
@@ -62,9 +84,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
     }
 
+    let y_val = textureLoad(tex_y, vec2<i32>(x, y), 0).r * scale;
     let u_val = textureLoad(tex_u, vec2<i32>(uv_x, uv_y), 0).r * scale;
     let v_val = textureLoad(tex_v, vec2<i32>(uv_x, uv_y), 0).r * scale;
 
-    let rgb = yuv_to_rgb(y_val * scale, u_val, v_val);
+    var rgb: vec3<f32>;
+    if params.colorspace == 0u {
+        rgb = yuv_to_rgb_601(y_val, u_val, v_val);
+    } else {
+        rgb = yuv_to_rgb_709(y_val, u_val, v_val);
+    }
     textureStore(output_texture, vec2<i32>(x, y), vec4<f32>(rgb, 1.0));
 }

@@ -73,13 +73,13 @@ impl<'a> State<'a> {
             .await
             .unwrap();
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an sRGB surface texture. Using a different
-        // one will result in all the colors coming out darker. If you want to support non
-        // sRGB surfaces, you'll need to account for that when drawing to the frame.
+        // Non-sRGB surface: YCbCr→RGB output is already display-referred
+        // (gamma-encoded). Writing to an sRGB attachment would apply the sRGB
+        // encode a second time and wash out mid-tones.
         let surface_format = surface_caps
             .formats
             .iter()
-            .find(|f| f.is_srgb())
+            .find(|f| !f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
 

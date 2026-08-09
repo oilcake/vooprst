@@ -1,9 +1,10 @@
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ConverterParams {
-    pub format: u32, // 0=YUV420P, 1=YUV422P, 2=YUV444P
+    pub format: u32,     // 0=YUV420P, 1=YUV422P, 2=YUV444P, 3=YUV422P10LE, 4=YUVA444P12LE
     pub width: u32,
     pub height: u32,
+    pub colorspace: u32, // 0=BT.601, 1=BT.709
 }
 
 pub struct ComputeConverter {

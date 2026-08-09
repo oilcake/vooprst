@@ -1,7 +1,16 @@
 use crate::compute_converter::{ComputeConverter, ConverterParams};
 use crate::yuv::{YuvFormat, YuvPlanes};
-use ffmpeg_next::util::frame::Video;
+use ffmpeg_next::{color::Space, util::frame::Video};
 use tracing::debug;
+
+/// YCbCr matrix tag for the shader. 0 = BT.601, 1 = BT.709.
+/// Unspecified/unknown defaults to BT.709 (modern content).
+fn color_matrix(frame: &Video) -> u32 {
+    match frame.color_space() {
+        Space::BT470BG | Space::SMPTE170M | Space::FCC => 0,
+        _ => 1,
+    }
+}
 
 /// Uploads YUV planes → compute-shader → RGBA8 texture.
 /// Owns plane textures, output texture, bind groups, dispatch.
@@ -48,7 +57,7 @@ impl Converter {
         frame: &Video,
     ) -> &wgpu::Texture {
         let format = YuvFormat::from_pixel(frame.format())
-            .expect("unsupported pixel format");
+            .unwrap_or_else(|| panic!("unsupported pixel format: {:?}", frame.format()));
 
         let width = frame.width();
         let height = frame.height();
@@ -71,7 +80,7 @@ impl Converter {
         let out_view = self.universal_texture.as_ref().unwrap().create_view(&Default::default());
 
         self.setup_bind_group(device, &y_view, &u_view, &v_view, &out_view);
-        self.update_params(queue, format, width, height);
+        self.update_params(queue, format, width, height, color_matrix(frame));
         self.dispatch(device, queue, width, height);
 
         self.universal_texture.as_ref().unwrap()
@@ -143,11 +152,13 @@ impl Converter {
         format: YuvFormat,
         width: u32,
         height: u32,
+        colorspace: u32,
     ) {
         let params = ConverterParams {
             format: format as u32,
             width,
             height,
+            colorspace,
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
     }

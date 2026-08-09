@@ -9,6 +9,8 @@ pub enum YuvFormat {
     YUV422P = 1,
     YUV444P = 2,
     YUV422P10LE = 3,
+    YUVA444P12LE = 4,
+    YUV422P12LE = 5,
 }
 
 impl YuvFormat {
@@ -18,6 +20,8 @@ impl YuvFormat {
             Pixel::YUV422P => Some(Self::YUV422P),
             Pixel::YUV444P => Some(Self::YUV444P),
             Pixel::YUV422P10LE => Some(Self::YUV422P10LE),
+            Pixel::YUVA444P12LE => Some(Self::YUVA444P12LE),
+            Pixel::YUV422P12LE => Some(Self::YUV422P12LE),
             _ => None,
         }
     }
@@ -26,7 +30,7 @@ impl YuvFormat {
     fn component_size(&self) -> usize {
         match self {
             Self::YUV420P | Self::YUV422P | Self::YUV444P => 1, // u8
-            Self::YUV422P10LE => 2, // u16 LE
+            Self::YUV422P10LE | Self::YUVA444P12LE | Self::YUV422P12LE => 2, // u16 LE
         }
     }
 }
@@ -112,8 +116,8 @@ impl YuvPlanes {
 fn chroma_size(luma_w: u32, luma_h: u32, fmt: YuvFormat) -> (u32, u32) {
     match fmt {
         YuvFormat::YUV420P => (luma_w / 2, luma_h / 2),
-        YuvFormat::YUV422P | YuvFormat::YUV422P10LE => (luma_w / 2, luma_h),
-        YuvFormat::YUV444P => (luma_w, luma_h),
+        YuvFormat::YUV422P | YuvFormat::YUV422P10LE | YuvFormat::YUV422P12LE => (luma_w / 2, luma_h),
+        YuvFormat::YUV444P | YuvFormat::YUVA444P12LE => (luma_w, luma_h),
     }
 }
 
