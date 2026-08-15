@@ -60,8 +60,7 @@ async fn main() {
         // Load first file
         let first_file = &files[current_index];
         println!("Opening file: {}\n", first_file.display());
-        let mut clip = Clip::new(first_file.to_str().unwrap()).unwrap();
-        let _ = clip.cache_all_frames();
+        let clip = Clip::new(first_file.to_str().unwrap()).unwrap();
         let link = Link::new();
         let mut decoder = Decoder::new(clip, link, files, frame_buffer_sndr, command_rcv);
         loop {

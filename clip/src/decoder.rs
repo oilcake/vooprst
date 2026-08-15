@@ -53,14 +53,12 @@ impl Decoder {
                 self.current_file_index = (self.current_file_index + 1) % self.files.len();
                 self.clip =
                     Clip::new(self.files[self.current_file_index].to_str().unwrap()).unwrap();
-                self.clip.cache_all_frames().unwrap();
             }
             DecoderCommand::PreviousFile => {
                 self.current_file_index =
                     (self.current_file_index + self.files.len() - 1) % self.files.len();
                 self.clip =
                     Clip::new(self.files[self.current_file_index].to_str().unwrap()).unwrap();
-                self.clip.cache_all_frames().unwrap();
             }
         }
     }
