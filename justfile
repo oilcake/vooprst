@@ -1,4 +1,4 @@
-path_to_video := env_var_or_default('PATH_TO_VIDEO', 'samples')
+path_to_video := env_var_or_default('PATH_TO_VIDEO', '../samples/hand/')
 debug := 'target/debug/app'
 
 run:
